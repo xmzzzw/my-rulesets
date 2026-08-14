@@ -4,14 +4,15 @@
 
 **用途**：换机场后分流规则不依赖任何机场策略，全部由本仓库统一管理。在塔台（tower）或各代理客户端中引用本仓库的 raw URL 即可。
 
-## 方案文件
+## 使用方式
 
-塔台导入这些方案后，再单独导入机场订阅节点，即可生成完整配置。配置里引用的全部图标存放在 `icons/` 目录，防止原始链接失效。
+本仓库提供**规则集**（`.list`）和**图标**（`icons/`），供塔台（tower）或各代理客户端引用。
 
-- **`MyRules_Flower_ss.scheme.conf`**：基于 Flower 机场 ss 协议节点的方案。含 6 个国家分组（香港/美国/日本/新加坡/台湾/韩国）+ 🌍 其他地区，每个国家分组带 `-自动` url-test 故障转移。节点命名带 `[ss]` 协议标注。
-- **`MyRules_Flower_trojan.scheme.conf`**：基于 Flower 机场 trojan 协议节点的方案。结构同上，节点命名带 `[trojan]` 协议标注。
+塔台导入分流规则不区分协议，直接引用本仓库的规则集 URL 即可：
+- 规则集：`https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/<规则集名>.list`
+- 图标：`https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/icons/<图标名>.png`
 
-两个方案都不含任何节点/密码，可安全导入塔台。选择与你机场订阅协议一致的方案导入即可。
+配置里引用的全部图标存放在 `icons/` 目录，防止原始链接失效。
 
 ## icons/ 图标目录
 
