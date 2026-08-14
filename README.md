@@ -4,6 +4,16 @@
 
 **用途**：换机场后分流规则不依赖任何机场策略，全部由本仓库统一管理。在塔台（tower）或各代理客户端中引用本仓库的 raw URL 即可。
 
+## 方案文件
+
+- **`MyRules_Flower.scheme.conf`**：完整的 Surge 方案（策略组 + 规则集引用），不含任何节点/密码，可安全导入塔台。基于 Flower 机场节点结构设计，含 6 个国家分组（香港/美国/日本/新加坡/台湾/韩国）+ 🌍 其他地区，每个国家分组带 `-自动` url-test 故障转移。
+  - 塔台导入此方案后，再单独导入机场订阅节点，即可生成完整配置。
+  - 配置里引用的全部图标存放在 `icons/` 目录，防止原始链接失效。
+
+## icons/ 图标目录
+
+收集了配置中使用的全部策略组图标（22 个），防止原始链接失效。详见 [icons/README.md](icons/README.md)。
+
 ## 改造点（相对原始 AmyTelecom 规则）
 
 1. **Extra_AI.list**：新增 `opencode.ai` / `opencode.com` 域名，走 AI / 美国出口策略组。用于 OpenCode / OpenCode Go 网关，确保国外模型（OpenAI/Claude 等）API 可达。
