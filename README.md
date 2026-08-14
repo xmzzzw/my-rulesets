@@ -43,10 +43,30 @@ my-rulesets/
 ├── USAGE.md               # 完整使用说明（详细部署 + 原理 + FAQ）
 ├── overwrite_script.js    # FlClash / Clash Verge 覆写脚本
 ├── openclash_overwrite.sh # OpenClash 覆写脚本
+├── tools/                 # 配置转换工具（自动识别协议/国家/格式）
+│   ├── convert.py         # 通用转换工具
+│   └── README.md          # 工具说明
 ├── *.list                 # Surge 格式规则集（32 个）
 ├── clash/                 # Clash 兼容规则集（32 个）
 └── icons/                 # 策略组图标（22 个）
 ```
+
+## 🛠️ 配置转换工具
+
+遇到新机场/新订阅时，用 [tools/convert.py](tools/README.md) 自动生成配置：
+
+```bash
+# 自动识别协议/国家/格式，输出 Surge 配置
+python3 tools/convert.py --input <订阅URL或文件>
+
+# 输出 Clash YAML
+python3 tools/convert.py --input <订阅URL> --format clash
+
+# 保留订阅刷新（[Proxy] 用 #!include）
+python3 tools/convert.py --input <订阅URL> --subscription-refresh
+```
+
+**工具自动处理**：协议识别（ss/trojan/anytls...）、国家归类（emoji/代码/中文名）、单节点国家合并、策略组构建、规则集注入。详见 [tools/README.md](tools/README.md)。
 
 ---
 
