@@ -37,7 +37,7 @@ RULE_PATH="./rule_provider"
 # ============ 辅助：压缩为单行（去掉换行与多余空格）============
 # heredoc 内容 → 单行字符串。传给 ruby_* 函数必须是单行！
 oneliner() {
-   tr -d '\n' | sed 's/[[:space:]][[:space:]]*/ /g'
+   tr -d '\n' | sed 's/[ 	][ 	]*/ /g'
 }
 
 # ============ 1. 注入 32 个 rule-providers（引用 GitHub 规则集）============
@@ -91,49 +91,49 @@ ruby_merge_hash "$CONFIG_FILE" "['rule-providers']" "$RPS"
 # ---------- 2.1 提取订阅节点名列表 ----------
 # 节点在 YAML 里形如：- name: '🇭🇰 HK | 香港 01'
 NODE_NAMES_FILE=$(mktemp)
-grep -E '^[[:space:]]*-[[:space:]]*name:' "$CONFIG_FILE" \
-  | sed -E "s/^[[:space:]]*-[[:space:]]*name:[[:space:]]*//; s/^['\"]//; s/['\"][[:space:]]*$//" \
+grep -E '^[ \t]*-[ \t]*name:' "$CONFIG_FILE" \
+  | sed -E "s/^[ \t]*-[ \t]*name:[ \t]*//; s/^['\"]//; s/['\"][ \t]*$//" \
   > "$NODE_NAMES_FILE"
 
 # ---------- 2.2 国家 → 匹配正则 映射表（写死，避免多行 heredoc 的转义问题）----------
 # 每行：组名|正则。正则为 grep -E 语法。
 # 统计命中该正则的节点数，≥2 才建组。
 cat > /tmp/myrules_country_table << 'TABEOF'
-🇭🇰 香港|(?i)(香港|HK|Hong[[:space:]]?Kong)
-🇸🇬 新加坡|(?i)(新加坡|SG|Singapore)
-🇯🇵 日本|(?i)(日本|JP|Japan)
-🇺🇸 美国|(?i)(美国|US|America)
-🇨🇳 台湾|(?i)(台湾|TW|Taiwan)
-🇰🇷 韩国|(?i)(韩国|KR|Korea)
-🇬🇧 英国|(?i)(英国|GB|UK|United[[:space:]]?Kingdom)
-🇩🇪 德国|(?i)(德国|DE|Germany)
-🇦🇺 澳大利亚|(?i)(澳大利亚|澳洲|AU|Australia)
-🇨🇦 加拿大|(?i)(加拿大|CA|Canada)
-🇫🇷 法国|(?i)(法国|FR|France)
-🇷🇺 俄罗斯|(?i)(俄罗斯|RU|Russia)
-🇳🇱 荷兰|(?i)(荷兰|NL|Netherlands)
-🇮🇳 印度|(?i)(印度|IN|India)
-🇹🇷 土耳其|(?i)(土耳其|TR|Turkey)
-🇦🇪 阿联酋|(?i)(阿联酋|迪拜|AE|Dubai)
-🇮🇹 意大利|(?i)(意大利|IT|Italy)
-🇪🇸 西班牙|(?i)(西班牙|ES|Spain)
-🇧🇷 巴西|(?i)(巴西|BR|Brazil)
-🇲🇾 马来西亚|(?i)(马来西亚|MY|Malaysia)
-🇻🇳 越南|(?i)(越南|VN|Vietnam)
-🇹🇭 泰国|(?i)(泰国|TH|Thailand)
-🇵🇭 菲律宾|(?i)(菲律宾|PH|Philippines)
-🇮🇩 印尼|(?i)(印尼|ID|Indonesia)
-🇲🇽 墨西哥|(?i)(墨西哥|MX|Mexico)
-🇳🇿 新西兰|(?i)(新西兰|NZ|New[[:space:]]?Zealand)
-🇮🇪 爱尔兰|(?i)(爱尔兰|IE|Ireland)
-🇸🇪 瑞典|(?i)(瑞典|SE|Sweden)
-🇳🇴 挪威|(?i)(挪威|NO|Norway)
-🇫🇮 芬兰|(?i)(芬兰|FI|Finland)
-🇨🇭 瑞士|(?i)(瑞士|CH|Switzerland)
-🇵🇱 波兰|(?i)(波兰|PL|Poland)
-🇦🇷 阿根廷|(?i)(阿根廷|AR|Argentina)
-🇪🇬 埃及|(?i)(埃及|EG|Egypt)
-🇿🇦 南非|(?i)(南非|ZA|South[[:space:]]?Africa)
+🇭🇰 香港|(香港|HK|Hong ?Kong)
+🇸🇬 新加坡|(新加坡|SG|Singapore)
+🇯🇵 日本|(日本|JP|Japan)
+🇺🇸 美国|(美国|US|America)
+🇨🇳 台湾|(台湾|TW|Taiwan)
+🇰🇷 韩国|(韩国|KR|Korea)
+🇬🇧 英国|(英国|GB|UK|United ?Kingdom)
+🇩🇪 德国|(德国|DE|Germany)
+🇦🇺 澳大利亚|(澳大利亚|澳洲|AU|Australia)
+🇨🇦 加拿大|(加拿大|CA|Canada)
+🇫🇷 法国|(法国|FR|France)
+🇷🇺 俄罗斯|(俄罗斯|RU|Russia)
+🇳🇱 荷兰|(荷兰|NL|Netherlands)
+🇮🇳 印度|(印度|IN|India)
+🇹🇷 土耳其|(土耳其|TR|Turkey)
+🇦🇪 阿联酋|(阿联酋|迪拜|AE|Dubai)
+🇮🇹 意大利|(意大利|IT|Italy)
+🇪🇸 西班牙|(西班牙|ES|Spain)
+🇧🇷 巴西|(巴西|BR|Brazil)
+🇲🇾 马来西亚|(马来西亚|MY|Malaysia)
+🇻🇳 越南|(越南|VN|Vietnam)
+🇹🇭 泰国|(泰国|TH|Thailand)
+🇵🇭 菲律宾|(菲律宾|PH|Philippines)
+🇮🇩 印尼|(印尼|ID|Indonesia)
+🇲🇽 墨西哥|(墨西哥|MX|Mexico)
+🇳🇿 新西兰|(新西兰|NZ|New ?Zealand)
+🇮🇪 爱尔兰|(爱尔兰|IE|Ireland)
+🇸🇪 瑞典|(瑞典|SE|Sweden)
+🇳🇴 挪威|(挪威|NO|Norway)
+🇫🇮 芬兰|(芬兰|FI|Finland)
+🇨🇭 瑞士|(瑞士|CH|Switzerland)
+🇵🇱 波兰|(波兰|PL|Poland)
+🇦🇷 阿根廷|(阿根廷|AR|Argentina)
+🇪🇬 埃及|(埃及|EG|Egypt)
+🇿🇦 南非|(南非|ZA|South ?Africa)
 TABEOF
 
 # ---------- 2.3 统计国家节点数，生成 ≥2 的分组 ----------
@@ -141,7 +141,7 @@ TABEOF
 MATCHED_FILE=$(mktemp)
 while IFS='|' read -r name regex; do
     [ -z "$name" ] && continue
-    cnt=$(grep -cE "$regex" "$NODE_NAMES_FILE" || true)
+    cnt=$(grep -icE "$regex" "$NODE_NAMES_FILE" || true)
     [ "$cnt" -ge 2 ] && echo "$name|$regex|$cnt"
 done < /tmp/myrules_country_table > "$MATCHED_FILE"
 # 按计数降序排序
@@ -153,8 +153,8 @@ sort -t'|' -k3 -rn "$MATCHED_FILE" > /tmp/myrules_matched_sorted
 #   {"name"=>"🇫🇷 法国-自动","type"=>"url-test","include-all"=>true,"filter"=>"...","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},
 NAT_GROUPS=$(while IFS='|' read -r name regex cnt; do
     [ -z "$name" ] && continue
-    printf '{"name"=>"%s","type"=>"select","include-all"=>true,"filter"=>"%s","proxies"=>["%s-自动"]},' "$name" "$regex" "$name"
-    printf '{"name"=>"%s-自动","type"=>"url-test","include-all"=>true,"filter"=>"%s","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},' "$name" "$regex"
+    printf '{"name"=>"%s","type"=>"select","include-all"=>true,"filter"=>"(?i)%s","proxies"=>["%s-自动"]},' "$name" "$regex" "$name"
+    printf '{"name"=>"%s-自动","type"=>"url-test","include-all"=>true,"filter"=>"(?i)%s","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},' "$name" "$regex"
 done < /tmp/myrules_matched_sorted)
 
 # ---------- 2.5 生成国家组名引用列表 ----------
