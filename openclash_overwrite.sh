@@ -99,12 +99,29 @@ ruby_merge_hash "$CONFIG_FILE" "['rule-providers']" "$RPS"
 # 统计结果写入临时文件，保证变量在父 shell 生效。
 
 # ---------- 2.1 提取订阅节点名列表 ----------
-# 节点在 YAML 里形如：- name: '🇭🇰 HK | 香港 01'
-# 过滤流量/到期伪节点（与 overwrite_script.js 一致，不进任何策略组）
+# 兼容两种 YAML 写法：
+#   block-style：  - name: '🇭🇰 HK | 香港 01'            （name: 在行首）
+#   flow-style：   - {name: 🇭🇰 HK | 香港 01, server: ...}  （name: 在 {} 里，全行单节点）
+# 原版只匹配 block-style，flow-style 订阅（如 ClashConfig 拼接的 anytls）
+# 一个节点都抓不到 → 国家分组全空 → 全归「其他地区」又被空省略 → 无国家分组。
+# 现用 awk 限定 proxies 段、提取每个 name 值（取 name: 后到首个「, 顶层key:」前，
+# 节点名本身不含此结构），跨 busybox/gawk 兼容，不依赖 sed 花括号转义。
+# 过滤流量/到期/面板伪节点（与 overwrite_script.js 一致，不进任何策略组）。
 NODE_NAMES_FILE=$(mktemp)
-grep -E '^[ \t]*-[ \t]*name:' "$CONFIG_FILE" \
-  | sed -E "s/^[ \t]*-[ \t]*name:[ \t]*//; s/^['\"]//; s/['\"][ \t]*$//" \
-  | grep -viE 'Traffic|Expire|流量|到期|剩余|套餐|官网|订阅' \
+awk '
+/^proxies:[[:space:]]*$/ { inprox=1; next }
+/^[a-zA-Z]/ { inprox=0 }
+inprox && /name:/ {
+  line=$0
+  sub(/^.*name:[[:space:]]*/, "", line)
+  # flow: 截断到首个「, <key>:」（server/type/port/…）；block: 行已只剩值（可能带引号/尾注释）
+  sub(/[[:space:]]*,[[:space:]]*(server|type|port|password|cipher|uuid|sni|network|alterId|protocol|obfs)[[:space:]]*:.*$/, "", line)
+  sub(/[[:space:]]*#.*$/, "", line)
+  gsub(/^[[:space:]\x27"]+|[[:space:]\x27"]+$/, "", line)
+  if (line != "") print line
+}
+' "$CONFIG_FILE" \
+  | grep -viE 'Traffic|Expire|流量|到期|剩余|套餐|官网|订阅|^Panel|^www\.|creamdata\.xyz|节点|主页' \
   > "$NODE_NAMES_FILE"
 
 # ---------- 2.2 国家 → 匹配正则 映射表（写死，避免多行 heredoc 的转义问题）----------
@@ -141,7 +158,7 @@ cat > /tmp/myrules_country_table << 'TABEOF'
 🇻🇳 越南@(越南|🇻🇳|[^A-Za-z]VN[^A-Za-z]|Vietnam)
 🇹🇭 泰国@(泰国|🇹🇭|[^A-Za-z]TH[^A-Za-z]|Thailand)
 🇵🇭 菲律宾@(菲律宾|🇵🇭|[^A-Za-z]PH[^A-Za-z]|Philippines)
-🇮🇩 印尼@(印尼|🇮🇩|[^A-Za-z]ID[^A-Za-z]|Indonesia)
+🇮🇩 印尼@(印尼|印度尼西亚|🇮🇩|[^A-Za-z]ID[^A-Za-z]|Indonesia)
 🇲🇽 墨西哥@(墨西哥|🇲🇽|[^A-Za-z]MX[^A-Za-z]|Mexico)
 🇳🇿 新西兰@(新西兰|🇳🇿|[^A-Za-z]NZ[^A-Za-z]|New ?Zealand)
 🇮🇪 爱尔兰@(爱尔兰|🇮🇪|[^A-Za-z]IE[^A-Za-z]|Ireland)
