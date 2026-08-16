@@ -3,6 +3,8 @@
 一套「**节点用机场订阅、规则用自己维护**」的多平台代理分流方案。
 
 > 📖 **完整使用说明见 [USAGE.md](USAGE.md)**（含各平台详细部署步骤、覆写脚本原理、FAQ）
+>
+> 🖊️ **各客户端覆写教程见 [OVERWRITE.md](OVERWRITE.md)**（Clash Verge/FlClash/OpenClash/ClashX/Shadowrocket/Loon/Surge/sing-box 覆写方法 + OpenClash 踩坑记录）
 
 ---
 
@@ -14,7 +16,7 @@
 - **节点** → 机场订阅链接（实时更新 + 自动显示流量/到期）
 - **规则/策略组** → 本仓库（国家分组 + 自动选择 + AI 分流 + opencode）
 
-**支持平台**：Surge（macOS/iOS）、FlClash（Android）、Clash Verge Rev（Windows）、OpenClash（软路由）。
+**支持平台**：Surge（macOS/iOS）、FlClash（Android）、Clash Verge Rev（Windows）、OpenClash（软路由）、ClashX/ClashX Pro（macOS）、Shadowrocket/Loon（iOS）、sing-box。
 
 ---
 
@@ -41,6 +43,7 @@ https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/openclash_overwrite.sh
 my-rulesets/
 ├── README.md              # 本文件（项目总览）
 ├── USAGE.md               # 完整使用说明（详细部署 + 原理 + FAQ）
+├── OVERWRITE.md           # 各客户端覆写教程 + OpenClash 踩坑记录
 ├── overwrite_script.js    # FlClash / Clash Verge 覆写脚本
 ├── openclash_overwrite.sh # OpenClash 覆写脚本
 ├── tools/                 # 配置转换工具（自动识别协议/国家/格式）

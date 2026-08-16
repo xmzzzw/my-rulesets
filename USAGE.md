@@ -298,24 +298,28 @@ function main(config) {
 
 ### 6.2 openclash_overwrite.sh（OpenClash）
 
-OpenClash 使用 Ruby 脚本操作 YAML：
+OpenClash 使用 Ruby 脚本操作 YAML（增量修改，保留订阅节点）：
 
 ```sh
-# 注入 rule-providers
-ruby_merge_hash "$CONFIG_FILE" "['rule-providers']" "'opencode'=>{...}"
+# 注入 rule-providers（Hash，用 ruby_merge_hash）
+ruby_merge_hash "$CONFIG_FILE" "['rule-providers']" "{'provider_4'=>{'type'=>'http','behavior'=>'classical','format'=>'text','url'=>'https://testingcf.jsdelivr.net/gh/xmzzzw/my-rulesets@main/clash/nexitallyy_Extra_AI.list','path'=>'./rule_provider/provider_4.list','interval'=>86400}}"
 
-# 注入 include-all 国家分组（自动归类，换机场不用改）
-ruby_merge_hash "$CONFIG_FILE" "['proxy-groups']" "'🇭🇰 香港'=>{'type'=>'select','include-all'=>true,'filter'=>'(?i)(香港|HK|HongKong)'}"
+# 替换 proxy-groups（Array，必须用 ruby_edit 整体赋值，不能用 ruby_merge_hash）
+ruby_edit "$CONFIG_FILE" "['proxy-groups']" '[{"name"=>"Proxies","type"=>"select","proxies"=>[...]}]'
 
-# 写自定义规则
-cat > /etc/openclash/custom/openclash_custom_rules.list << 'EOF'
-RULE-SET,opencode,AI
-EOF
+# 替换 rules（Array，同样用 ruby_edit）
+ruby_edit "$CONFIG_FILE" "['rules']" '["RULE-SET,provider_4,AI","GEOIP,CN,🎯Direct,no-resolve","MATCH,✈️Final"]'
 ```
 
 **关键差异**：
 - FlClash / Clash Verge：JS 脚本**整个重写**配置
 - OpenClash：Ruby 脚本**增量修改**配置（保留订阅原有内容）
+
+**⚠️ OpenClash 踩坑（必读，详见 `OVERWRITE.md`）**：
+1. **Ruby 片段必须单行**：OpenClash 用 grep 按行提取片段，多行参数被截断 → 覆写静默失效。用 heredoc + `tr -d '\n'` 压缩。
+2. **proxy-groups 是 Array**：`ruby_merge_hash` 报 `merge! for Array` 错误，必须用 `ruby_edit`。
+3. **provider url 用 jsdelivr**：raw.githubusercontent.com 常被墙/EOF → 节点全红。规则最前面加 `DOMAIN-SUFFIX,jsdelivr.net,🎯Direct` 等内部流量直连。
+4. **快速启动跳过覆写**：改脚本后 `touch` + 删 `/tmp/openclash.change` 再重启。
 
 ---
 
