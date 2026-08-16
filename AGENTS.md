@@ -145,7 +145,7 @@ function main(config, profileName) { ...; return config; }
 **手动规格**（convert.py 不适用时）：
 ```
 策略组顺序：Proxies → 应用组(AI/Netflix/...) → 🎯Direct → ✈️Final → 国家分组 + 自动选择
-国家分组：🇭🇰 香港 = select, 🇭🇰 香港-自动, 节点...；🇭🇰 香港-自动 = url-test, url=http://www.gstatic.com/generate_204, interval=300, tolerance=50
+国家分组（动态）：任一国家节点 ≥2 即建 select + url-test 自动分组（🇭🇰 香港 = select, 🇭🇰 香港-自动, 节点...；🇭🇰 香港-自动 = url-test, url=http://www.gstatic.com/generate_204, interval=300, tolerance=50）；≤1 节点国家并入 🌍 其他地区
 规则集：RULE-SET,https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/clash/<规则集>.list,<策略>
 ```
 

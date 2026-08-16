@@ -7,7 +7,7 @@
 # 规格（与 overwrite_script.js / 已验证的 FlClash 版一致）：
 #   - 保留订阅节点（proxies 原样保留）
 #   - 20 应用策略组（AI/Netflix/HBO/...）+ Proxies + 🎯Direct + ✈️Final
-#     + 10 国家分组 + 各 -自动 + 🌍 其他地区 = 44 策略组
+#     + 动态国家分组（≥2 节点即建组）+ 各 -自动 + 🌍 其他地区
 #   - 32 个 rule-providers（引用 GitHub clash/ 规则集）
 #   - 规则：5 条内部直连 + 32 条 RULE-SET + GEOIP,CN + MATCH
 #
@@ -81,57 +81,124 @@ RPS=$(echo "$RPS" | sed "s|REPL_RB|${RULE_BASE}|g; s|REPL_RP|${RULE_PATH}|g")
 ruby_merge_hash "$CONFIG_FILE" "['rule-providers']" "$RPS"
 
 # ============ 2. 注入策略组（整体替换 proxy-groups）============
-# include-all + filter 自动归类节点（换机场不用改）
-# 节点名匹配：emoji + 国家代码 + 中文名（如「🇭🇰 HK | 香港 01」）
+# 动态国家分组：统计订阅里各国家节点数，≥2 节点的国家才建独立分组，
+# 否则并入 🌍 其他地区（用户规范：≥2 节点即单独建组）。
+# 节点名匹配：emoji + 国家代码 + 中文名（如「🇭🇰 HK | 香港 01」）。
+#
+# POSIX sh 实现（OpenClash 用 busybox ash）：不用关联数组/管道赋值，
+# 统计结果写入临时文件，保证变量在父 shell 生效。
+
+# ---------- 2.1 提取订阅节点名列表 ----------
+# 节点在 YAML 里形如：- name: '🇭🇰 HK | 香港 01'
+NODE_NAMES_FILE=$(mktemp)
+grep -E '^[[:space:]]*-[[:space:]]*name:' "$CONFIG_FILE" \
+  | sed -E "s/^[[:space:]]*-[[:space:]]*name:[[:space:]]*//; s/^['\"]//; s/['\"][[:space:]]*$//" \
+  > "$NODE_NAMES_FILE"
+
+# ---------- 2.2 国家 → 匹配正则 映射表（写死，避免多行 heredoc 的转义问题）----------
+# 每行：组名|正则。正则为 grep -E 语法。
+# 统计命中该正则的节点数，≥2 才建组。
+cat > /tmp/myrules_country_table << 'TABEOF'
+🇭🇰 香港|(?i)(香港|HK|Hong[[:space:]]?Kong)
+🇸🇬 新加坡|(?i)(新加坡|SG|Singapore)
+🇯🇵 日本|(?i)(日本|JP|Japan)
+🇺🇸 美国|(?i)(美国|US|America)
+🇨🇳 台湾|(?i)(台湾|TW|Taiwan)
+🇰🇷 韩国|(?i)(韩国|KR|Korea)
+🇬🇧 英国|(?i)(英国|GB|UK|United[[:space:]]?Kingdom)
+🇩🇪 德国|(?i)(德国|DE|Germany)
+🇦🇺 澳大利亚|(?i)(澳大利亚|澳洲|AU|Australia)
+🇨🇦 加拿大|(?i)(加拿大|CA|Canada)
+🇫🇷 法国|(?i)(法国|FR|France)
+🇷🇺 俄罗斯|(?i)(俄罗斯|RU|Russia)
+🇳🇱 荷兰|(?i)(荷兰|NL|Netherlands)
+🇮🇳 印度|(?i)(印度|IN|India)
+🇹🇷 土耳其|(?i)(土耳其|TR|Turkey)
+🇦🇪 阿联酋|(?i)(阿联酋|迪拜|AE|Dubai)
+🇮🇹 意大利|(?i)(意大利|IT|Italy)
+🇪🇸 西班牙|(?i)(西班牙|ES|Spain)
+🇧🇷 巴西|(?i)(巴西|BR|Brazil)
+🇲🇾 马来西亚|(?i)(马来西亚|MY|Malaysia)
+🇻🇳 越南|(?i)(越南|VN|Vietnam)
+🇹🇭 泰国|(?i)(泰国|TH|Thailand)
+🇵🇭 菲律宾|(?i)(菲律宾|PH|Philippines)
+🇮🇩 印尼|(?i)(印尼|ID|Indonesia)
+🇲🇽 墨西哥|(?i)(墨西哥|MX|Mexico)
+🇳🇿 新西兰|(?i)(新西兰|NZ|New[[:space:]]?Zealand)
+🇮🇪 爱尔兰|(?i)(爱尔兰|IE|Ireland)
+🇸🇪 瑞典|(?i)(瑞典|SE|Sweden)
+🇳🇴 挪威|(?i)(挪威|NO|Norway)
+🇫🇮 芬兰|(?i)(芬兰|FI|Finland)
+🇨🇭 瑞士|(?i)(瑞士|CH|Switzerland)
+🇵🇱 波兰|(?i)(波兰|PL|Poland)
+🇦🇷 阿根廷|(?i)(阿根廷|AR|Argentina)
+🇪🇬 埃及|(?i)(埃及|EG|Egypt)
+🇿🇦 南非|(?i)(南非|ZA|South[[:space:]]?Africa)
+TABEOF
+
+# ---------- 2.3 统计国家节点数，生成 ≥2 的分组 ----------
+# 输出文件每行：组名|正则|计数（节点多的排前面）
+MATCHED_FILE=$(mktemp)
+while IFS='|' read -r name regex; do
+    [ -z "$name" ] && continue
+    cnt=$(grep -cE "$regex" "$NODE_NAMES_FILE" || true)
+    [ "$cnt" -ge 2 ] && echo "$name|$regex|$cnt"
+done < /tmp/myrules_country_table > "$MATCHED_FILE"
+# 按计数降序排序
+sort -t'|' -k3 -rn "$MATCHED_FILE" > /tmp/myrules_matched_sorted
+
+# ---------- 2.4 生成国家分组 Ruby 片段（select + url-test 自动）----------
+# NAT_GROUPS：形如
+#   {"name"=>"🇫🇷 法国","type"=>"select","include-all"=>true,"filter"=>"...","proxies"=>["🇫🇷 法国-自动"]},
+#   {"name"=>"🇫🇷 法国-自动","type"=>"url-test","include-all"=>true,"filter"=>"...","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},
+NAT_GROUPS=$(while IFS='|' read -r name regex cnt; do
+    [ -z "$name" ] && continue
+    printf '{"name"=>"%s","type"=>"select","include-all"=>true,"filter"=>"%s","proxies"=>["%s-自动"]},' "$name" "$regex" "$name"
+    printf '{"name"=>"%s-自动","type"=>"url-test","include-all"=>true,"filter"=>"%s","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},' "$name" "$regex"
+done < /tmp/myrules_matched_sorted)
+
+# ---------- 2.5 生成国家组名引用列表 ----------
+# GROUP_REFS：形如 "🇭🇰 香港","🇫🇷 法国",...,"🌍 其他地区"（供 Proxies/应用组/Final 引用）
+GROUP_REFS=$(while IFS='|' read -r name regex cnt; do
+    [ -z "$name" ] && continue
+    printf '"%s",' "$name"
+done < /tmp/myrules_matched_sorted)
+GROUP_REFS="${GROUP_REFS}\"🌍 其他地区\""
+
+# ---------- 2.6 组装 GROUPS（单行 Ruby 数组）----------
+# 顺序严格：Proxies → 20 应用组 → 🎯Direct → ✈️Final → 国家分组(+自动) → 🌍 其他地区(+自动)
 GROUPS=$(cat << 'EOF' | oneliner
 [
-{"name"=>"Proxies","type"=>"select","proxies"=>["🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"AI","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"Netflix","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"HBO","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"DisneyPlus","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"YouTube","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"Bahamut","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"Bilibili","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"MyTVSuper","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"Telegram","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"Crypto","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"Steam","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"Epic","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"Xbox","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"PlayStation","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"Microsoft","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"Scholar","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"Apple","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"Google","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"Tiktok","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
+{"name"=>"Proxies","type"=>"select","proxies"=>[GROUP_REFS]},
+{"name"=>"AI","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+{"name"=>"Netflix","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+{"name"=>"HBO","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+{"name"=>"DisneyPlus","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+{"name"=>"YouTube","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+{"name"=>"Bahamut","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+{"name"=>"Bilibili","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+{"name"=>"MyTVSuper","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+{"name"=>"Telegram","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+{"name"=>"Crypto","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+{"name"=>"Steam","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+{"name"=>"Epic","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+{"name"=>"Xbox","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+{"name"=>"PlayStation","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+{"name"=>"Microsoft","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+{"name"=>"Scholar","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+{"name"=>"Apple","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+{"name"=>"Google","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+{"name"=>"Tiktok","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
 {"name"=>"🎯Direct","type"=>"select","proxies"=>["DIRECT","Proxies"]},
-{"name"=>"✈️Final","type"=>"select","proxies"=>["Proxies","🎯Direct","🇭🇰 香港","🇸🇬 新加坡","🇯🇵 日本","🇺🇸 美国","🇨🇳 台湾","🇰🇷 韩国","🇬🇧 英国","🇩🇪 德国","🇦🇺 澳大利亚","🇨🇦 加拿大","🌍 其他地区"]},
-{"name"=>"🇭🇰 香港","type"=>"select","include-all"=>true,"filter"=>"(?i)(香港|HK|Hong\\s?Kong)","proxies"=>["🇭🇰 香港-自动"]},
-{"name"=>"🇭🇰 香港-自动","type"=>"url-test","include-all"=>true,"filter"=>"(?i)(香港|HK|Hong\\s?Kong)","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},
-{"name"=>"🇸🇬 新加坡","type"=>"select","include-all"=>true,"filter"=>"(?i)(新加坡|SG|Singapore)","proxies"=>["🇸🇬 新加坡-自动"]},
-{"name"=>"🇸🇬 新加坡-自动","type"=>"url-test","include-all"=>true,"filter"=>"(?i)(新加坡|SG|Singapore)","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},
-{"name"=>"🇯🇵 日本","type"=>"select","include-all"=>true,"filter"=>"(?i)(日本|JP|Japan)","proxies"=>["🇯🇵 日本-自动"]},
-{"name"=>"🇯🇵 日本-自动","type"=>"url-test","include-all"=>true,"filter"=>"(?i)(日本|JP|Japan)","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},
-{"name"=>"🇺🇸 美国","type"=>"select","include-all"=>true,"filter"=>"(?i)(美国|US|America)","proxies"=>["🇺🇸 美国-自动"]},
-{"name"=>"🇺🇸 美国-自动","type"=>"url-test","include-all"=>true,"filter"=>"(?i)(美国|US|America)","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},
-{"name"=>"🇨🇳 台湾","type"=>"select","include-all"=>true,"filter"=>"(?i)(台湾|TW|Taiwan)","proxies"=>["🇨🇳 台湾-自动"]},
-{"name"=>"🇨🇳 台湾-自动","type"=>"url-test","include-all"=>true,"filter"=>"(?i)(台湾|TW|Taiwan)","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},
-{"name"=>"🇰🇷 韩国","type"=>"select","include-all"=>true,"filter"=>"(?i)(韩国|KR|Korea)","proxies"=>["🇰🇷 韩国-自动"]},
-{"name"=>"🇰🇷 韩国-自动","type"=>"url-test","include-all"=>true,"filter"=>"(?i)(韩国|KR|Korea)","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},
-{"name"=>"🇬🇧 英国","type"=>"select","include-all"=>true,"filter"=>"(?i)(英国|GB|UK|United\\s?Kingdom)","proxies"=>["🇬🇧 英国-自动"]},
-{"name"=>"🇬🇧 英国-自动","type"=>"url-test","include-all"=>true,"filter"=>"(?i)(英国|GB|UK|United\\s?Kingdom)","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},
-{"name"=>"🇩🇪 德国","type"=>"select","include-all"=>true,"filter"=>"(?i)(德国|DE|Germany)","proxies"=>["🇩🇪 德国-自动"]},
-{"name"=>"🇩🇪 德国-自动","type"=>"url-test","include-all"=>true,"filter"=>"(?i)(德国|DE|Germany)","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},
-{"name"=>"🇦🇺 澳大利亚","type"=>"select","include-all"=>true,"filter"=>"(?i)(澳大利亚|AU|Australia)","proxies"=>["🇦🇺 澳大利亚-自动"]},
-{"name"=>"🇦🇺 澳大利亚-自动","type"=>"url-test","include-all"=>true,"filter"=>"(?i)(澳大利亚|AU|Australia)","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},
-{"name"=>"🇨🇦 加拿大","type"=>"select","include-all"=>true,"filter"=>"(?i)(加拿大|CA|Canada)","proxies"=>["🇨🇦 加拿大-自动"]},
-{"name"=>"🇨🇦 加拿大-自动","type"=>"url-test","include-all"=>true,"filter"=>"(?i)(加拿大|CA|Canada)","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},
+{"name"=>"✈️Final","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
+NAT_GROUPS
 {"name"=>"🌍 其他地区","type"=>"select","include-all"=>true,"proxies"=>["🌍 其他地区-自动"]},
 {"name"=>"🌍 其他地区-自动","type"=>"url-test","include-all"=>true,"url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50}
 ]
 EOF
 )
+# 替换占位符
+GROUPS=$(echo "$GROUPS" | sed "s|GROUP_REFS|${GROUP_REFS}|g; s|NAT_GROUPS|${NAT_GROUPS}|g")
 ruby_edit "$CONFIG_FILE" "['proxy-groups']" "$GROUPS"
 
 # ============ 3. 替换 rules（整体替换）============

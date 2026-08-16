@@ -33,7 +33,7 @@
 **支持平台**：Surge（macOS/iOS）、FlClash（Android）、Clash Verge Rev（Windows）、OpenClash（软路由）。
 
 **核心能力**：
-- 6 个主要国家/地区分组（香港/美国/日本/新加坡/台湾/韩国）+ 🌍 其他地区
+- **动态国家分组**：任一国家节点 ≥2 即建独立分组（如香港/美国/日本/新加坡/台湾/韩国/法国/俄罗斯...），≤1 节点归入 🌍 其他地区
 - 每个国家分组带 `-自动` url-test 故障转移（自动选最快节点）
 - AI 分流（含 opencode.ai）走 AI 策略组（可手动选美国出口）
 - 国内 AI 模型 API（DeepSeek/智谱/Kimi/通义）强制直连
@@ -178,7 +178,7 @@ RULE-SET,https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/nexitallyy_Ex
 6. 保存
 
 **③ 验证**
-- 代理页应显示：`Proxies` 顶层组 → 应用策略组（AI/Netflix/...）→ `🎯Direct` → `✈️Final` → 国家分组（6 国 + 🌍 其他地区）及各自 `-自动`
+- 代理页应显示：`Proxies` 顶层组 → 应用策略组（AI/Netflix/...）→ `🎯Direct` → `✈️Final` → 国家分组（≥2 节点的国家 + 🌍 其他地区）及各自 `-自动`
 - 每个国家分组可展开看到该国节点
 - AI 组可选择（含全部国家分组）
 - 流量进度条正常显示
@@ -292,7 +292,7 @@ function main(config) {
 
 **规格**（与 `Flower_ss_Clash_MyRules.yaml` 模板一致）：
 - proxies：保留订阅节点（90 个）
-- proxy-groups：36 个（6 国家分组 + 各 -自动 + 🌍其他地区 + 19 应用组 + Direct + Final）
+- proxy-groups：动态（≥2 节点国家各建 select + url-test 自动，🌍其他地区 + 19 应用组 + Direct + Final）
 - rule-providers：32 个
 - rules：34 条
 
@@ -369,12 +369,14 @@ Scholar / Apple / Google / Tiktok
 🎯Direct (直连) / ✈️Final (最终)
 
 国家分组（放 Final 之后，各带 -自动 故障转移）：
+**规则：任一国家节点 ≥2 即建独立分组，≤1 节点并入 🌍 其他地区**（如某机场有法国/俄罗斯 ≥2 节点也会建组）
 ├── 🇭🇰 香港 (select) → 🇭🇰 香港-自动 (url-test)
 ├── 🇺🇸 美国 (select) → 🇺🇸 美国-自动 (url-test)
 ├── 🇯🇵 日本 (select) → 🇯🇵 日本-自动 (url-test)
 ├── 🇸🇬 新加坡 (select) → 🇸🇬 新加坡-自动 (url-test)
 ├── 🇨🇳 台湾 (select) → 🇨🇳 台湾-自动 (url-test)
 ├── 🇰🇷 韩国 (select) → 🇰🇷 韩国-自动 (url-test)
+├── ...（≥2 节点的其他国家）
 └── 🌍 其他地区 (select) → 🌍 其他地区-自动 (url-test)
 ```
 

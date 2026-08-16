@@ -21,39 +21,77 @@ function main(config, profileName) {
   const nodes = config.proxies || [];
 
   // ============ 2. 定义策略组 ============
-  // 国家分组引用（根据订阅节点名自动归类）
-  const countries = ['🇭🇰 香港', '🇺🇸 美国', '🇯🇵 日本', '🇸🇬 新加坡', '🇨🇳 台湾', '🇰🇷 韩国'];
-  
+
   // 按国家归类节点（从节点名识别国家）
-  const countryNodes = {
-    '🇭🇰 香港': [], '🇺🇸 美国': [], '🇯🇵 日本': [],
-    '🇸🇬 新加坡': [], '🇨🇳 台湾': [], '🇰🇷 韩国': [], '🌍 其他地区': []
-  };
-  
-  const countryPrefixes = {
+  // 完整国家映射：emoji / 国家代码 / 中文名 均可识别
+  const countryPatterns = {
     '🇭🇰 香港': /香港|🇭🇰|HK|Hong\s?Kong/i,
-    '🇺🇸 美国': /美国|🇺🇸|🇺🇲|US|America/i,
-    '🇯🇵 日本': /日本|🇯🇵|JP|Japan/i,
     '🇸🇬 新加坡': /新加坡|🇸🇬|SG|Singapore/i,
+    '🇯🇵 日本': /日本|🇯🇵|JP|Japan/i,
+    '🇺🇸 美国': /美国|🇺🇸|🇺🇲|US|America/i,
     '🇨🇳 台湾': /台湾|🇨🇳|🇹🇼|TW|Taiwan/i,
-    '🇰🇷 韩国': /韩国|🇰🇷|KR|Korea/i
+    '🇰🇷 韩国': /韩国|🇰🇷|KR|Korea/i,
+    '🇬🇧 英国': /英国|🇬🇧|UK|GB|United\s?Kingdom/i,
+    '🇩🇪 德国': /德国|🇩🇪|DE|Germany/i,
+    '🇦🇺 澳大利亚': /澳大利亚|澳洲|🇦🇺|AU|Australia/i,
+    '🇨🇦 加拿大': /加拿大|🇨🇦|CA|Canada/i,
+    '🇫🇷 法国': /法国|🇫🇷|FR|France/i,
+    '🇷🇺 俄罗斯': /俄罗斯|🇷🇺|RU|Russia/i,
+    '🇳🇱 荷兰': /荷兰|🇳🇱|NL|Netherlands/i,
+    '🇮🇳 印度': /印度|🇮🇳|IN|India/i,
+    '🇹🇷 土耳其': /土耳其|🇹🇷|TR|Turkey/i,
+    '🇦🇪 阿联酋': /阿联酋|迪拜|🇦🇪|AE|Dubai/i,
+    '🇮🇹 意大利': /意大利|🇮🇹|IT|Italy/i,
+    '🇪🇸 西班牙': /西班牙|🇪🇸|ES|Spain/i,
+    '🇧🇷 巴西': /巴西|🇧🇷|BR|Brazil/i,
+    '🇲🇾 马来西亚': /马来西亚|🇲🇾|MY|Malaysia/i,
+    '🇻🇳 越南': /越南|🇻🇳|VN|Vietnam/i,
+    '🇹🇭 泰国': /泰国|🇹🇭|TH|Thailand/i,
+    '🇵🇭 菲律宾': /菲律宾|🇵🇭|PH|Philippines/i,
+    '🇮🇩 印尼': /印尼|🇮🇩|ID|Indonesia/i,
+    '🇲🇽 墨西哥': /墨西哥|🇲🇽|MX|Mexico/i,
+    '🇳🇿 新西兰': /新西兰|🇳🇿|NZ|New\s?Zealand/i,
+    '🇮🇪 爱尔兰': /爱尔兰|🇮🇪|IE|Ireland/i,
+    '🇸🇪 瑞典': /瑞典|🇸🇪|SE|Sweden/i,
+    '🇳🇴 挪威': /挪威|🇳🇴|NO|Norway/i,
+    '🇫🇮 芬兰': /芬兰|🇫🇮|FI|Finland/i,
+    '🇨🇭 瑞士': /瑞士|🇨🇭|CH|Switzerland/i,
+    '🇵🇱 波兰': /波兰|🇵🇱|PL|Poland/i,
+    '🇦🇷 阿根廷': /阿根廷|🇦🇷|AR|Argentina/i,
+    '🇪🇬 埃及': /埃及|🇪🇬|EG|Egypt/i,
+    '🇿🇦 南非': /南非|🇿🇦|ZA|South\s?Africa/i
   };
-  
+
+  // 归类节点（跳过 Traffic/Expire 显示节点）
+  const countryNodes = { '🌍 其他地区': [] };
+  for (const [country] of Object.entries(countryPatterns)) countryNodes[country] = [];
   for (const node of nodes) {
-    // 跳过 Traffic/Expire 显示节点
     if (/Traffic|Expire|流量|到期/i.test(node.name)) continue;
     let matched = '🌍 其他地区';
-    for (const [country, regex] of Object.entries(countryPrefixes)) {
+    for (const [country, regex] of Object.entries(countryPatterns)) {
       if (regex.test(node.name)) { matched = country; break; }
     }
     countryNodes[matched].push(node.name);
   }
-  
-  // 构建策略组（顺序与 OpenClash 规格一致：Proxies → 应用组 → Direct → Final → 国家分组）
+
+  // 动态国家分组：任一国家节点 ≥2 就建独立分组，否则并入 🌍 其他地区
+  for (const [country, list] of Object.entries(countryNodes)) {
+    if (country === '🌍 其他地区') continue;
+    if (list.length < 2) {
+      countryNodes['🌍 其他地区'].push(...list);
+      delete countryNodes[country];
+    }
+  }
+  // 国家分组顺序：节点多的在前；🌍 其他地区放最后
+  const groupNames = Object.keys(countryNodes)
+    .filter(c => c !== '🌍 其他地区')
+    .sort((a, b) => countryNodes[b].length - countryNodes[a].length)
+    .concat('🌍 其他地区');
+
+  // 构建策略组（顺序：Proxies → 应用组 → Direct → Final → 国家分组）
   const groups = [];
 
   // 顶层节点选择组（引用国家分组）
-  const groupNames = ['🇭🇰 香港', '🇺🇸 美国', '🇯🇵 日本', '🇸🇬 新加坡', '🇨🇳 台湾', '🇰🇷 韩国', '🌍 其他地区'];
   groups.push({
     name: 'Proxies', type: 'select',
     proxies: groupNames
