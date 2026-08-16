@@ -98,29 +98,24 @@ ruby_merge_hash "$CONFIG_FILE" "['rule-providers']" "$RPS"
 # POSIX sh 实现（OpenClash 用 busybox ash）：不用关联数组/管道赋值，
 # 统计结果写入临时文件，保证变量在父 shell 生效。
 
-# ---------- 2.1 提取订阅节点名列表 ----------
-# 兼容两种 YAML 写法：
-#   block-style：  - name: '🇭🇰 HK | 香港 01'            （name: 在行首）
-#   flow-style：   - {name: 🇭🇰 HK | 香港 01, server: ...}  （name: 在 {} 里，全行单节点）
-# 原版只匹配 block-style，flow-style 订阅（如 ClashConfig 拼接的 anytls）
-# 一个节点都抓不到 → 国家分组全空 → 全归「其他地区」又被空省略 → 无国家分组。
-# 现用 awk 限定 proxies 段、提取每个 name 值（取 name: 后到首个「, 顶层key:」前，
-# 节点名本身不含此结构），跨 busybox/gawk 兼容，不依赖 sed 花括号转义。
+# ---------- 2.1 提取订阅节点名列表（用 ruby 解析 YAML）----------
+# 关键：必须用 ruby 的 YAML.load_file 提取真实节点名，不能用 awk/sed 手工解析。
+#   OpenClash 把订阅下载后经 yml_change.sh 处理，emoji 节点名在 YAML 里被转义为
+#   "\U0001F1F5\U0001F1ED" 形式（字面反斜杠+U，非真实 emoji 字节）。awk/sed 手工
+#   解析只能拿到 "\U0001F1F5" 字面串，无法还原成真实 emoji → 「其他地区」显式
+#   proxies 引用的节点名与 mihomo 加载后的真实节点名不一致 → fatal not found → 节点全红。
+#   ruby 的 YAML.load_file 会正确还原所有 \U/"\\/quote 转义，得到真实 UTF-8 emoji 字节，
+#   且天然兼容 block/flow 两种 YAML 写法。
 # 过滤流量/到期/面板伪节点（与 overwrite_script.js 一致，不进任何策略组）。
 NODE_NAMES_FILE=$(mktemp)
-awk '
-/^proxies:[[:space:]]*$/ { inprox=1; next }
-/^[a-zA-Z]/ { inprox=0 }
-inprox && /name:/ {
-  line=$0
-  sub(/^.*name:[[:space:]]*/, "", line)
-  # flow: 截断到首个「, <key>:」（server/type/port/…）；block: 行已只剩值（可能带引号/尾注释）
-  sub(/[[:space:]]*,[[:space:]]*(server|type|port|password|cipher|uuid|sni|network|alterId|protocol|obfs)[[:space:]]*:.*$/, "", line)
-  sub(/[[:space:]]*#.*$/, "", line)
-  gsub(/^[[:space:]\x27"]+|[[:space:]\x27"]+$/, "", line)
-  if (line != "") print line
-}
-' "$CONFIG_FILE" \
+ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e '
+  Value = YAML.load_file(ARGV[0])
+  Value["proxies"].each do |p|
+    n = p["name"]
+    next unless n.is_a?(String) && !n.empty?
+    puts n
+  end
+' "$CONFIG_FILE" 2>/dev/null \
   | grep -viE 'Traffic|Expire|流量|到期|剩余|套餐|官网|订阅|^Panel|^www\.|creamdata\.xyz|节点|主页' \
   > "$NODE_NAMES_FILE"
 
@@ -202,11 +197,15 @@ while IFS= read -r node; do
 done < "$NODE_NAMES_FILE" > "$OTHER_NODES_FILE"
 
 # 生成 Ruby proxies 字面量：节点名转义 " 与 \ 后，拼成 "名","名",...
-ruby_escape() { sed 's/\\/\\\\/g; s/"/\\"/g'; }
-OTHER_REFS=$(while IFS= read -r node; do
-    [ -z "$node" ] && continue
-    printf '"%s",' "$(printf '%s' "$node" | ruby_escape)"
-done < "$OTHER_NODES_FILE")
+# ⚠️ 必须用 sed 字面拼接，不能用 printf '%s' —— 早期版本用 printf 链生成，
+# emoji 多字节字符经 printf/sed 某步被破坏成字面 "\U0001F1F5..."，写入 YAML
+# 后节点名与订阅真实节点名不匹配 → mihomo 报 fatal「not found」→ 内核启动失败、节点全红。
+# sed 的 ./x77/ 不涉及格式化解析，仅替换 \ 与 "，emoji 字节原封不动通过。
+# 先在文件层把每个 " 转义成 \"、\ 转义成 \\，再逐行包成 "...", 。
+ruby_escape_file() {
+    sed 's/\\/\\\\/g; s/"/\\"/g; s/.*/"&",/' "$1"
+}
+OTHER_REFS=$(ruby_escape_file "$OTHER_NODES_FILE" | tr -d '\n')
 OTHER_REFS="${OTHER_REFS%,}"   # 去末尾逗号（无节点时为空串）
 
 # ---------- 2.4 生成国家分组 Ruby 片段（select + url-test 自动）----------
@@ -228,10 +227,14 @@ GROUP_REFS=$(while IFS='@' read -r name regex cnt; do
     [ -z "$name" ] && continue
     printf '"%s",' "$name"
 done < /tmp/myrules_matched_sorted)
-# 「其他地区」组 + 引用条件化：仅有未归类节点时生成
+# 「其他地区」组 + 引用条件化：仅有未归类节点时生成。
+# 注意：OTHER_REFS 必须在此【直接展开】成实际节点名，不能作为 Ruby 字面词
+# 留在 OTHER_GROUPS 里 —— 早期版本把 OTHER_REFS 当占位符写给 sed 替换，
+# 但 sed 不会替换值内部的占位符（只替换模板行的占位用作 sed 目标），
+# 导致 Ruby 看到裸词 OTHER_REFS 报「uninitialized constant」→ 整个 proxy-groups 片段失败。
 if [ -n "$OTHER_REFS" ]; then
     GROUP_REFS="${GROUP_REFS}\"🌍 其他地区\""
-    OTHER_GROUPS="{\"name\"=>\"🌍 其他地区\",\"type\"=>\"select\",\"proxies\"=>[\"🌍 其他地区-自动\",OTHER_REFS]},{\"name\"=>\"🌍 其他地区-自动\",\"type\"=>\"url-test\",\"proxies\"=>[OTHER_REFS],\"url\"=>\"http://www.gstatic.com/generate_204\",\"interval\"=>300,\"tolerance\"=>50}"
+    OTHER_GROUPS="{\"name\"=>\"🌍 其他地区\",\"type\"=>\"select\",\"proxies\"=>[\"🌍 其他地区-自动\",${OTHER_REFS}]},{\"name\"=>\"🌍 其他地区-自动\",\"type\"=>\"url-test\",\"proxies\"=>[${OTHER_REFS}],\"url\"=>\"http://www.gstatic.com/generate_204\",\"interval\"=>300,\"tolerance\"=>50}"
 else
     OTHER_GROUPS=""
 fi
