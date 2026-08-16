@@ -23,6 +23,25 @@
 
 ---
 
+## 0.5 全局协作规范（最重要，违反视为错误）
+
+> ⚠️ **用户反复强调的硬性要求，任何 Agent 必须遵守：**
+
+1. **所有修改必须「云端 + 本地」双端一致**
+   - 本仓库（GitHub `xmzzzw/my-rulesets`）是唯一真源（source of truth）
+   - **改了任何文件（overwrite_script.js / openclash_overwrite.sh / convert.py / 文档 / skill），必须同步：**
+     - 推送到 GitHub（云端）
+     - 更新本地对应文件（`~/my-rulesets/`）
+     - 若涉及已部署的客户端（如 Windows Clash Verge / r2s OpenClash），**还要把改动同步到目标设备并重启生效**
+   - **不允许只改一边**：只改本地不推送，或只推 GitHub 不动本地，都算未完成
+2. **本地 skills 与仓库保持一致**
+   - `~/.claude/skills/my-rulesets-convert/` 和 `~/.claude/skills/my-rulesets-overwrite/` 的内容
+     必须与仓库中规格保持一致（策略组顺序、动态分组、命名规则等）
+   - 仓库规格一变，本地 skill 要同步更新
+3. **修改流程**：改 → 本地验证 → 推 GitHub → 同步目标设备（如需）→ 更新记忆（如需）
+
+---
+
 ## 1. 仓库与环境
 
 ### 1.1 仓库结构
