@@ -5,6 +5,8 @@
 > 📖 **完整使用说明见 [USAGE.md](USAGE.md)**（含各平台详细部署步骤、覆写脚本原理、FAQ）
 >
 > 🖊️ **各客户端覆写教程见 [OVERWRITE.md](OVERWRITE.md)**（Clash Verge/FlClash/OpenClash/ClashX/Shadowrocket/Loon/Surge/sing-box 覆写方法 + OpenClash 踩坑记录）
+>
+> 🤖 **AI Agent 操作手册见 [AGENTS.md](AGENTS.md)**（Claude/Codex 等 Agent 按需求→动作执行：订阅转换、覆写、部署、验证）
 
 ---
 
@@ -44,6 +46,7 @@ my-rulesets/
 ├── README.md              # 本文件（项目总览）
 ├── USAGE.md               # 完整使用说明（详细部署 + 原理 + FAQ）
 ├── OVERWRITE.md           # 各客户端覆写教程 + OpenClash 踩坑记录
+├── AGENTS.md              # AI Agent 操作手册（Claude/Codex 调用）
 ├── overwrite_script.js    # FlClash / Clash Verge 覆写脚本
 ├── openclash_overwrite.sh # OpenClash 覆写脚本
 ├── tools/                 # 配置转换工具（自动识别协议/国家/格式）
