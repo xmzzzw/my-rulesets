@@ -267,8 +267,8 @@ ruby_edit "$CONFIG_FILE" "['proxy-groups']" "$GROUPS"
 
 **排查**：
 ```bash
-# 通过代理访问 ipinfo 看真实出口
-curl -s -x http://Clash:<密码>@127.0.0.1:7890 'https://ipinfo.io/json' | grep -E '"country"|"org"'
+# 通过代理访问 ipinfo 看真实出口（<认证> 用你自己的代理认证）
+curl -s -x http://<认证>@127.0.0.1:7890 'https://ipinfo.io/json' | grep -E '"country"|"org"'
 ```
 
 **结论**：广播 IP 机场的「地区限制」问题**无法靠覆写解决**（配置再对，出口 IP 不变）。需要：

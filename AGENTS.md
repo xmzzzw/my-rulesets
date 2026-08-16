@@ -54,12 +54,13 @@ my-rulesets/                          # 公开仓库 github.com/xmzzzw/my-rulese
 
 仓库是**公开的**。以下内容**绝不允许写入仓库**：
 - ❌ 机场订阅链接（含 token）
-- ❌ 代理认证密码（如 `Clash:<密码>`）
-- ❌ API secret（如 OpenClash 的 `<secret>`）
+- ❌ 代理认证密码（格式如 `Clash:<密码>`，位于 r2s `/etc/config/openclash` 的 `authentication`）
+- ❌ OpenClash API secret（位于运行配置的 `secret` 字段）
 - ❌ 含真实节点的客户端配置（`*.yaml`/`*.conf`/`MyRules_*`，已在 `.gitignore` 阻止）
 
 这些敏感值只存在于：`~/.claude/projects/-Users-zhouzhenwei/memory/` 记忆文件、r2s 配置文件、用户本地。
-文档中一律用占位符，如 `<订阅URL>` / `<secret>`。
+文档中一律用占位符：`<订阅URL>` / `<认证>` / `<secret>`。
+> ⚠️ Agent 注意：真实值从记忆或 r2s 读取，**禁止**以任何形式写入公开文档/commit。
 
 ---
 
