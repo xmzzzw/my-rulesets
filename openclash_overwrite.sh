@@ -142,7 +142,7 @@ MATCHED_FILE=$(mktemp)
 while IFS='@' read -r name regex; do
     [ -z "$name" ] && continue
     cnt=$(grep -icE "$regex" "$NODE_NAMES_FILE" || true)
-    [ "$cnt" -ge 2 ] && echo "$name|$regex|$cnt"
+    [ "$cnt" -ge 2 ] && echo "$name@$regex@$cnt"
 done < /tmp/myrules_country_table > "$MATCHED_FILE"
 # 按计数降序排序
 sort -t'@' -k3 -rn "$MATCHED_FILE" > /tmp/myrules_matched_sorted
