@@ -33,6 +33,10 @@
 | Surge 规则集 | `https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/<规则集>.list` |
 | 本教程 | `https://github.com/xmzzzw/my-rulesets/blob/main/OVERWRITE.md` |
 
+> 📌 **overwrite_script.js 双端兼容**：入口 `function main(config, profileName)`。
+> FlClash（只传 config）与 Clash Verge（传 config + profileName）都能跑。
+> ⚠️ **Clash Verge 不支持 URL 直拉脚本**，只能本地文件 → 见下文「Windows 自动同步脚本」。
+
 > ⚠️ **OpenClash 用 jsdelivr 加速**（raw.githubusercontent.com 常被墙）：
 > `https://testingcf.jsdelivr.net/gh/xmzzzw/my-rulesets@main/clash/<规则集>.list`
 
@@ -66,20 +70,79 @@
 4. **粘贴**：`https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/overwrite_script.js`
 5. **保存**，自动生效
 
-**脚本特征**：`function main(config) { ...; return config; }`，直接改 config 对象。
+**脚本特征**：入口 `function main(config, profileName)`，FlClash 只传 `config`，
+直接改 config 对象返回（与 Clash Verge 同一份脚本，双端兼容）。
+
+> 若 URL 导入/规则集下载失败（被墙），可把脚本内 `ruleSetUrl` 换成 jsdelivr：
+> `https://testingcf.jsdelivr.net/gh/xmzzzw/my-rulesets@main/clash/`。
 
 > 流量进度条依赖订阅响应头 `subscription-userinfo`，机场支持则自动显示。
 
 ### Clash Verge Rev（Windows）
 
-1. **添加订阅**：订阅 URL
-2. **新建脚本 profile**：订阅右键 → 「脚本」→ 新建
-3. **粘贴脚本**（可从 URL 获取）：`https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/overwrite_script.js`
-4. **保存**
+1. **添加订阅**：订阅 URL 导入机场 YAML
+2. **新建脚本 profile**：订阅右键 → 「新建脚本」→ 选中该订阅作为父级
+3. **粘贴脚本**：右键脚本 profile → 「编辑文件」→ 粘贴
+   `https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/overwrite_script.js`
+   的内容（或按下面「自动同步」方式一键拉取）
+4. **保存并启用**，回「代理」页应看到国家分组 + 各 `-自动` + 应用组
 
 **脚本特征**：`function main(config, profileName) { ...; return config; }`。
 
+> ⚠️ **脚本不能直接从 URL 拉取**。Clash Verge 的脚本 profile 是本地文件，
+> 不支持像订阅那样填 URL 自动导入；脚本运行环境也隔离（无法 `fetch` 远程脚本）。
+> 所以要么手动粘贴，要么用下面的自动同步方案。
+
 > 新版 Clash Verge 移除了 prepend/append（改「编辑规则/编辑代理组」界面），但脚本 profile 仍可用。
+
+#### Windows 自动同步脚本（推荐）
+
+Verge 的脚本 profile 对应 `profiles/` 目录下某个 `.js` 文件。GitHub 改了覆写脚本后，
+用一条命令把远程脚本同步到本机，再重启 Verge 即生效。
+
+**第一步：确认 profiles 目录路径**
+
+- 旧版/自定义安装：`%USERPROFILE%\.config\clash-verge\profiles\`
+- 新版（安装版，AppData）：`%APPDATA%\io.github.clash-verge-rev.clash-verge-rev\profiles\`
+
+在 Verge「订阅」页右键你要用的脚本 profile → 查看文件所在目录，即为你的 profiles 路径。
+
+**第二步：写同步 bat**
+
+新建 `sync-verge.bat`（路径按你的实际情况改）：
+
+```bat
+@echo off
+chcp 65001 >nul
+set "PROFILES=%APPDATA%\io.github.clash-verge-rev.clash-verge-rev\profiles"
+set "SCRIPT=my-rulesets-overwrite.js"
+
+rem 1. 拉取仓库最新覆写脚本
+curl -L -o "%PROFILES%\%SCRIPT%" ^
+  https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/overwrite_script.js
+
+rem 2. 确认写入成功（文件非空则继续）
+for %%F in ("%PROFILES%\%SCRIPT%") do if %%~zF LEQ 0 (
+  echo [ERROR] 拉取失败，脚本文件为空
+  pause & exit /b 1
+)
+
+echo [OK] 覆写脚本已同步。请重启 Clash Verge 生效。
+pause
+```
+
+**第三步：关联到脚本 profile**
+
+关键一步——Verge 里已有脚本 profile 引用的是它自己的文件名，所以要让你建的脚本 profile
+指向 `my-rulesets-overwrite.js`：
+
+1. 在 Verge「订阅」页新建一个**脚本** profile（父级选你的机场订阅）
+2. 右键 → 编辑文件，把文件另存/重命名为 `my-rulesets-overwrite.js`（或编辑后直接覆盖这个文件名）
+3. 以后 GitHub 更新脚本 → 双击 `sync-verge.bat` → 重启 Verge → 生效
+
+> 若 Verge 不按外部文件名重新读取，更稳妥的做法：bat 直接把内容写到
+> Verge 已创建的脚本 profile 的原始文件名上（在你第一步确认的目录里找到那个 `.js`），
+> 再用 Verge 的「重新加载」/ 右键重新启用。
 
 ### OpenClash（软路由）
 

@@ -1,10 +1,25 @@
-// 覆写脚本：将机场订阅配置改造为「my-rulesets」规格
-// 兼容 FlClash（脚本模式）与 Clash Verge（脚本 profile）
-// 保留订阅节点，替换策略组/规则为自定义结构
-function main(config) {
+// ============================================================
+// my-rulesets 覆写脚本（双端兼容）
+// ------------------------------------------------------------
+// 将机场订阅配置改造为「my-rulesets」规格：保留订阅节点，
+// 重建策略组（国家分组 + url-test 自动 + 应用组 + Direct/Final），
+// 注入 rule-providers（引用 my-rulesets 的 clash/ 规则集）并重写 rules。
+//
+// 适配端：
+//   - FlClash（安卓）：配置 → 覆写 → 脚本模式，从 URL 直接导入本文件
+//   - Clash Verge Rev（Windows）：订阅右键 → 新建脚本 profile → 编辑文件 → 粘贴本文件
+//
+// 入口签名 function main(config, profileName)：
+//   - FlClash 只传 config，profileName 为 undefined，不影响运行
+//   - Clash Verge 会传 config, profileName，可利用 profileName 区分多订阅
+//
+// 注意：Clash Verge 的脚本 profile 不支持从 URL 直接拉取脚本，
+// 只能本地文件（粘贴或 curl 同步），详见 OVERWRITE.md。
+// ============================================================
+function main(config, profileName) {
   // ============ 1. 保留订阅节点 ============
   const nodes = config.proxies || [];
-  
+
   // ============ 2. 定义策略组 ============
   // 国家分组引用（根据订阅节点名自动归类）
   const countries = ['🇭🇰 香港', '🇺🇸 美国', '🇯🇵 日本', '🇸🇬 新加坡', '🇨🇳 台湾', '🇰🇷 韩国'];
@@ -84,6 +99,9 @@ function main(config) {
   
   // ============ 3. 注入 rule-providers（引用 GitHub 规则集）============
   const ruleProviders = {};
+
+  // 规则集地址源。默认 raw.githubusercontent.com；若下载失败/被墙，
+  // 改用 jsdelivr CDN：'https://testingcf.jsdelivr.net/gh/xmzzzw/my-rulesets@main/clash/'
   const ruleSetUrl = 'https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/clash/';
   const ruleSets = [
     ['nexitallyy_Extra_CN_3.list', '🎯Direct'],
@@ -131,10 +149,17 @@ function main(config) {
     rules.push(`RULE-SET,${providerName},${policy}`);
   });
   
+  // 内部流量/规则集下载直连，避免 mihomo 拉 rule-provider 时
+  // 命中 MATCH 走代理导致 EOF 死循环（OpenClash 踩坑，Windows 同样适用）
+  rules.push('DOMAIN-SUFFIX,jsdelivr.net,🎯Direct');
+  rules.push('DOMAIN-SUFFIX,githubusercontent.com,🎯Direct');
+  rules.push('DOMAIN-SUFFIX,github.com,🎯Direct');
+  rules.push('DOMAIN-SUFFIX,raw.githubusercontent.com,🎯Direct');
+
   // GEOIP + MATCH
   rules.push('GEOIP,CN,🎯Direct,no-resolve');
   rules.push('MATCH,✈️Final');
-  
+
   // ============ 4. 组装并返回 ============
   config.proxies = nodes;
   config['proxy-groups'] = groups;
