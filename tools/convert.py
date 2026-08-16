@@ -170,8 +170,11 @@ def build_policy_groups(nodes, single_node_merge=True):
             by_country['🌍 其他地区'].extend(by_country[c])
             del by_country[c]
     
-    # 排序（多节点优先）
-    countries = sorted(by_country.keys(), key=lambda x: -len(by_country[x]))
+    # 排序：国家按节点数降序（节点最多的排最前），🌍 其他地区恒在最后
+    countries = sorted(
+        (c for c in by_country if c != '🌍 其他地区'),
+        key=lambda x: -len(by_country[x])
+    ) + ['🌍 其他地区']
     
     # 构建策略组
     groups = []
