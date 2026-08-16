@@ -49,32 +49,16 @@ function main(config, profileName) {
     countryNodes[matched].push(node.name);
   }
   
-  // 构建国家分组（select + url-test 自动选择）
+  // 构建策略组（顺序与 OpenClash 规格一致：Proxies → 应用组 → Direct → Final → 国家分组）
   const groups = [];
-  
+
   // 顶层节点选择组（引用国家分组）
   const groupNames = ['🇭🇰 香港', '🇺🇸 美国', '🇯🇵 日本', '🇸🇬 新加坡', '🇨🇳 台湾', '🇰🇷 韩国', '🌍 其他地区'];
   groups.push({
     name: 'Proxies', type: 'select',
     proxies: groupNames
   });
-  
-  // 各国家分组
-  for (const country of groupNames) {
-    const nodeList = countryNodes[country] || [];
-    if (nodeList.length === 0) continue;
-    groups.push({
-      name: country, type: 'select',
-      proxies: [`${country}-自动`].concat(nodeList)
-    });
-    groups.push({
-      name: `${country}-自动`, type: 'url-test',
-      url: 'http://www.gstatic.com/generate_204',
-      interval: 300, tolerance: 50,
-      proxies: nodeList
-    });
-  }
-  
+
   // 应用策略组（引用国家分组）
   const appGroups = [
     'Netflix', 'HBO', 'DisneyPlus', 'YouTube', 'Bahamut', 'Bilibili',
@@ -96,7 +80,23 @@ function main(config, profileName) {
     name: '✈️Final', type: 'select',
     proxies: ['Proxies', '🎯Direct'].concat(groupNames)
   });
-  
+
+  // 国家分组（放 Final 之后，与 OpenClash 规格一致）
+  for (const country of groupNames) {
+    const nodeList = countryNodes[country] || [];
+    if (nodeList.length === 0) continue;
+    groups.push({
+      name: country, type: 'select',
+      proxies: [`${country}-自动`].concat(nodeList)
+    });
+    groups.push({
+      name: `${country}-自动`, type: 'url-test',
+      url: 'http://www.gstatic.com/generate_204',
+      interval: 300, tolerance: 50,
+      proxies: nodeList
+    });
+  }
+
   // ============ 3. 注入 rule-providers（引用 GitHub 规则集）============
   const ruleProviders = {};
 
