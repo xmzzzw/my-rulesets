@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 敏感文件：绝不上传
+# 机场订阅链接 / 订阅配置 / 含真实节点的客户端配置
+*.subscription
+*sub*.yaml
+*sub*.yml
+*sub*.conf
+*_OpenClash.*
+MyRules_*
+FlClash_*
+CreamData_*
+Flower_*
+*.backup.conf
+*.scheme.conf
+
+# 系统/编辑器
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# 本仓库永远不放客户端配置（yaml/yml 一律拒绝，规则集用 .list）
+# 如需提交 yaml，需显式 git add -f
+*.yaml
+*.yml

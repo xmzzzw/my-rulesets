@@ -18,6 +18,16 @@
 #   本脚本用 heredoc 构造内容后压缩换行，保证传给函数的参数无换行。
 #
 # 换机场不用改：国家分组用 include-all + filter 自动归类
+#
+# ⚠️ 「🌍 其他地区」必须用【排除式 filter】（排除所有已建独立国家分组的正则），
+#   而非裸 include-all。裸 include-all 会把订阅里【全部】节点拽进「其他地区」，
+#   导致已分配到 🇭🇰 香港/🇯🇵 日本 等独立分组的节点在这里重复出现 —— 用户报告的 bug。
+#   排除式 filter：(?i)^(?!.*(香港|HK|日本|JP|...)).*$ 只放行未命中任何国家正则的节点。
+#
+# ⚠️ 国家匹配须精确，避免大小写不敏感的子串误命中：
+#   原版 grep -icE "ID" 会让「印尼」计数命中 "Valid"/"Provider" 等英文单词里的 ID，
+#   → 单节点国家被误判 ≥2 → 误建组。现对【国家代码】加【词边界】（前后非字母），
+#   emoji/中文仍用普通包含；计数仍用 grep -iE 但正则自带边界。
 # ============================================================
 . /usr/share/openclash/ruby.sh
 . /usr/share/openclash/log.sh
@@ -90,50 +100,59 @@ ruby_merge_hash "$CONFIG_FILE" "['rule-providers']" "$RPS"
 
 # ---------- 2.1 提取订阅节点名列表 ----------
 # 节点在 YAML 里形如：- name: '🇭🇰 HK | 香港 01'
+# 过滤流量/到期伪节点（与 overwrite_script.js 一致，不进任何策略组）
 NODE_NAMES_FILE=$(mktemp)
 grep -E '^[ \t]*-[ \t]*name:' "$CONFIG_FILE" \
   | sed -E "s/^[ \t]*-[ \t]*name:[ \t]*//; s/^['\"]//; s/['\"][ \t]*$//" \
+  | grep -viE 'Traffic|Expire|流量|到期|剩余|套餐|官网|订阅' \
   > "$NODE_NAMES_FILE"
 
 # ---------- 2.2 国家 → 匹配正则 映射表（写死，避免多行 heredoc 的转义问题）----------
-# 每行：组名|正则。正则为 grep -E 语法。
-# 统计命中该正则的节点数，≥2 才建组。
+# 每行：组名@正则。正则为 grep -E 语法。统计命中该正则的节点数，≥2 才建组。
+#
+# 匹配精度（修复「单节点国家被误建组」bug）：
+#   - emoji 与中文：普通包含即可（如 香港 / 🇭🇰），不存在子串污染。
+#   - 英文国家代码：加 grep -E 词边界 [^A-Za-z] 包夹（非字母边界），
+#     防止 "ID" 命中 "Valid"、"IN" 命中 "Pinyin"、"US" 命中 "Status" 等误判。
+#     用 [^A-Za-z] 而非 \b：\b 对 emoji/中文边界行为不定，[[:space:]]又不覆盖标点。
+#   - 英文全名（Hong Kong/Singapore）：词身自身够长不污染，普通包含。
+#   实测 CreamData / Flower 多机场均不再误建单节点组。
 cat > /tmp/myrules_country_table << 'TABEOF'
-🇭🇰 香港@(香港|HK|Hong ?Kong)
-🇸🇬 新加坡@(新加坡|SG|Singapore)
-🇯🇵 日本@(日本|JP|Japan)
-🇺🇸 美国@(美国|US|America)
-🇨🇳 台湾@(台湾|TW|Taiwan)
-🇰🇷 韩国@(韩国|KR|Korea)
-🇬🇧 英国@(英国|GB|UK|United ?Kingdom)
-🇩🇪 德国@(德国|DE|Germany)
-🇦🇺 澳大利亚@(澳大利亚|澳洲|AU|Australia)
-🇨🇦 加拿大@(加拿大|CA|Canada)
-🇫🇷 法国@(法国|FR|France)
-🇷🇺 俄罗斯@(俄罗斯|RU|Russia)
-🇳🇱 荷兰@(荷兰|NL|Netherlands)
-🇮🇳 印度@(印度|IN|India)
-🇹🇷 土耳其@(土耳其|TR|Turkey)
-🇦🇪 阿联酋@(阿联酋|迪拜|AE|Dubai)
-🇮🇹 意大利@(意大利|IT|Italy)
-🇪🇸 西班牙@(西班牙|ES|Spain)
-🇧🇷 巴西@(巴西|BR|Brazil)
-🇲🇾 马来西亚@(马来西亚|MY|Malaysia)
-🇻🇳 越南@(越南|VN|Vietnam)
-🇹🇭 泰国@(泰国|TH|Thailand)
-🇵🇭 菲律宾@(菲律宾|PH|Philippines)
-🇮🇩 印尼@(印尼|ID|Indonesia)
-🇲🇽 墨西哥@(墨西哥|MX|Mexico)
-🇳🇿 新西兰@(新西兰|NZ|New ?Zealand)
-🇮🇪 爱尔兰@(爱尔兰|IE|Ireland)
-🇸🇪 瑞典@(瑞典|SE|Sweden)
-🇳🇴 挪威@(挪威|NO|Norway)
-🇫🇮 芬兰@(芬兰|FI|Finland)
-🇨🇭 瑞士@(瑞士|CH|Switzerland)
-🇵🇱 波兰@(波兰|PL|Poland)
-🇦🇷 阿根廷@(阿根廷|AR|Argentina)
-🇪🇬 埃及@(埃及|EG|Egypt)
-🇿🇦 南非@(南非|ZA|South ?Africa)
+🇭🇰 香港@(香港|🇭🇰|[^A-Za-z]HK[^A-Za-z]|Hong ?Kong)
+🇸🇬 新加坡@(新加坡|🇸🇬|[^A-Za-z]SG[^A-Za-z]|Singapore)
+🇯🇵 日本@(日本|🇯🇵|[^A-Za-z]JP[^A-Za-z]|Japan)
+🇺🇸 美国@(美国|🇺🇸|🇺🇲|[^A-Za-z]US[^A-Za-z]|America)
+🇨🇳 台湾@(台湾|🇨🇳|🇹🇼|[^A-Za-z]TW[^A-Za-z]|Taiwan)
+🇰🇷 韩国@(韩国|🇰🇷|[^A-Za-z]KR[^A-Za-z]|Korea)
+🇬🇧 英国@(英国|🇬🇧|[^A-Za-z]GB[^A-Za-z]|[^A-Za-z]UK[^A-Za-z]|United ?Kingdom)
+🇩🇪 德国@(德国|🇩🇪|[^A-Za-z]DE[^A-Za-z]|Germany)
+🇦🇺 澳大利亚@(澳大利亚|澳洲|🇦🇺|[^A-Za-z]AU[^A-Za-z]|Australia)
+🇨🇦 加拿大@(加拿大|🇨🇦|[^A-Za-z]CA[^A-Za-z]|Canada)
+🇫🇷 法国@(法国|🇫🇷|[^A-Za-z]FR[^A-Za-z]|France)
+🇷🇺 俄罗斯@(俄罗斯|🇷🇺|[^A-Za-z]RU[^A-Za-z]|Russia)
+🇳🇱 荷兰@(荷兰|🇳🇱|[^A-Za-z]NL[^A-Za-z]|Netherlands)
+🇮🇳 印度@(印度|🇮🇳|[^A-Za-z]IN[^A-Za-z]|India)
+🇹🇷 土耳其@(土耳其|🇹🇷|[^A-Za-z]TR[^A-Za-z]|Turkey)
+🇦🇪 阿联酋@(阿联酋|迪拜|🇦🇪|[^A-Za-z]AE[^A-Za-z]|Dubai)
+🇮🇹 意大利@(意大利|🇮🇹|[^A-Za-z]IT[^A-Za-z]|Italy)
+🇪🇸 西班牙@(西班牙|🇪🇸|[^A-Za-z]ES[^A-Za-z]|Spain)
+🇧🇷 巴西@(巴西|🇧🇷|[^A-Za-z]BR[^A-Za-z]|Brazil)
+🇲🇾 马来西亚@(马来西亚|🇲🇾|[^A-Za-z]MY[^A-Za-z]|Malaysia)
+🇻🇳 越南@(越南|🇻🇳|[^A-Za-z]VN[^A-Za-z]|Vietnam)
+🇹🇭 泰国@(泰国|🇹🇭|[^A-Za-z]TH[^A-Za-z]|Thailand)
+🇵🇭 菲律宾@(菲律宾|🇵🇭|[^A-Za-z]PH[^A-Za-z]|Philippines)
+🇮🇩 印尼@(印尼|🇮🇩|[^A-Za-z]ID[^A-Za-z]|Indonesia)
+🇲🇽 墨西哥@(墨西哥|🇲🇽|[^A-Za-z]MX[^A-Za-z]|Mexico)
+🇳🇿 新西兰@(新西兰|🇳🇿|[^A-Za-z]NZ[^A-Za-z]|New ?Zealand)
+🇮🇪 爱尔兰@(爱尔兰|🇮🇪|[^A-Za-z]IE[^A-Za-z]|Ireland)
+🇸🇪 瑞典@(瑞典|🇸🇪|[^A-Za-z]SE[^A-Za-z]|Sweden)
+🇳🇴 挪威@(挪威|🇳🇴|[^A-Za-z]NO[^A-Za-z]|Norway)
+🇫🇮 芬兰@(芬兰|🇫🇮|[^A-Za-z]FI[^A-Za-z]|Finland)
+🇨🇭 瑞士@(瑞士|🇨🇭|[^A-Za-z]CH[^A-Za-z]|Switzerland)
+🇵🇱 波兰@(波兰|🇵🇱|[^A-Za-z]PL[^A-Za-z]|Poland)
+🇦🇷 阿根廷@(阿根廷|🇦🇷|[^A-Za-z]AR[^A-Za-z]|Argentina)
+🇪🇬 埃及@(埃及|🇪🇬|[^A-Za-z]EG[^A-Za-z]|Egypt)
+🇿🇦 南非@(南非|🇿🇦|[^A-Za-z]ZA[^A-Za-z]|South ?Africa)
 TABEOF
 
 # ---------- 2.3 统计国家节点数，生成 ≥2 的分组 ----------
@@ -147,10 +166,37 @@ done < /tmp/myrules_country_table > "$MATCHED_FILE"
 # 按计数降序排序
 sort -t'@' -k3 -rn "$MATCHED_FILE" > /tmp/myrules_matched_sorted
 
+# ---------- 2.3b 计算「🌍 其他地区」成员：未被任何 ≥2 国家正则命中的节点 ----------
+# 修复「其他地区」含已分配国家分组节点的 bug：
+#   原版用裸 include-all =>true 且无 filter → 把订阅【全部】节点吸进「其他地区」，
+#   香港/日本/美国等已建独立分组的节点在此重复出现。
+#   RE2 不支持负向断言 (?!...)，无法用一行的排除式 filter；故改为【显式枚举】，
+#   与 overwrite_script.js / convert.py 三端逻辑统一：只放进未命中任何独立国家正则的节点。
+#   单节点国家（<2 未建组）的节点天然落回这里 —— 不再被误建独立组，也不漏。
+OTHER_NODES_FILE=$(mktemp)
+while IFS= read -r node; do
+    [ -z "$node" ] && continue
+    matched=0
+    while IFS='@' read -r cname cregex ccnt; do
+        [ -z "$cname" ] && continue
+        if printf '%s' "$node" | grep -qiE "$cregex"; then matched=1; break; fi
+    done < /tmp/myrules_matched_sorted
+    [ "$matched" = "0" ] && printf '%s\n' "$node"
+done < "$NODE_NAMES_FILE" > "$OTHER_NODES_FILE"
+
+# 生成 Ruby proxies 字面量：节点名转义 " 与 \ 后，拼成 "名","名",...
+ruby_escape() { sed 's/\\/\\\\/g; s/"/\\"/g'; }
+OTHER_REFS=$(while IFS= read -r node; do
+    [ -z "$node" ] && continue
+    printf '"%s",' "$(printf '%s' "$node" | ruby_escape)"
+done < "$OTHER_NODES_FILE")
+OTHER_REFS="${OTHER_REFS%,}"   # 去末尾逗号（无节点时为空串）
+
 # ---------- 2.4 生成国家分组 Ruby 片段（select + url-test 自动）----------
+# 国家分组用 include-all + filter 收【本国家】节点（正确：filter 只吸命中该国的节点）。
 # NAT_GROUPS：形如
-#   {"name"=>"🇫🇷 法国","type"=>"select","include-all"=>true,"filter"=>"...","proxies"=>["🇫🇷 法国-自动"]},
-#   {"name"=>"🇫🇷 法国-自动","type"=>"url-test","include-all"=>true,"filter"=>"...","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},
+#   {"name"=>"🇫🇷 法国","type"=>"select","include-all"=>true,"filter"=>"(?i)...","proxies"=>["🇫🇷 法国-自动"]},
+#   {"name"=>"🇫🇷 法国-自动","type"=>"url-test","include-all"=>true,"filter"=>"(?i)...","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},
 NAT_GROUPS=$(while IFS='@' read -r name regex cnt; do
     [ -z "$name" ] && continue
     printf '{"name"=>"%s","type"=>"select","include-all"=>true,"filter"=>"(?i)%s","proxies"=>["%s-自动"]},' "$name" "$regex" "$name"
@@ -158,15 +204,25 @@ NAT_GROUPS=$(while IFS='@' read -r name regex cnt; do
 done < /tmp/myrules_matched_sorted)
 
 # ---------- 2.5 生成国家组名引用列表 ----------
-# GROUP_REFS：形如 "🇭🇰 香港","🇫🇷 法国",...,"🌍 其他地区"（供 Proxies/应用组/Final 引用）
+# GROUP_REFS：形如 "🇭🇰 香港","🇫🇷 法国",...[:,"🌍 其他地区"]
+# 「🌍 其他地区」仅在有未归类节点（OTHER_REFS 非空）时才加入引用，
+# 避免引用一个无成员的空组（mihomo url-test 无节点会启动失败）。
 GROUP_REFS=$(while IFS='@' read -r name regex cnt; do
     [ -z "$name" ] && continue
     printf '"%s",' "$name"
 done < /tmp/myrules_matched_sorted)
-GROUP_REFS="${GROUP_REFS}\"🌍 其他地区\""
+# 「其他地区」组 + 引用条件化：仅有未归类节点时生成
+if [ -n "$OTHER_REFS" ]; then
+    GROUP_REFS="${GROUP_REFS}\"🌍 其他地区\""
+    OTHER_GROUPS="{\"name\"=>\"🌍 其他地区\",\"type\"=>\"select\",\"proxies\"=>[\"🌍 其他地区-自动\",OTHER_REFS]},{\"name\"=>\"🌍 其他地区-自动\",\"type\"=>\"url-test\",\"proxies\"=>[OTHER_REFS],\"url\"=>\"http://www.gstatic.com/generate_204\",\"interval\"=>300,\"tolerance\"=>50}"
+else
+    OTHER_GROUPS=""
+fi
+# 去末尾逗号使 JSON 更干净（Ruby 容忍尾逗号，但保险）
+GROUP_REFS="${GROUP_REFS%,}"
 
 # ---------- 2.6 组装 GROUPS（单行 Ruby 数组）----------
-# 顺序严格：Proxies → 20 应用组 → 🎯Direct → ✈️Final → 国家分组(+自动) → 🌍 其他地区(+自动)
+# 顺序严格：Proxies → 20 应用组 → 🎯Direct → ✈️Final → 国家分组(+自动) → [可选]🌍 其他地区(+自动)
 GROUPS=$(cat << 'EOF' | oneliner
 [
 {"name"=>"Proxies","type"=>"select","proxies"=>[GROUP_REFS]},
@@ -191,14 +247,12 @@ GROUPS=$(cat << 'EOF' | oneliner
 {"name"=>"Tiktok","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
 {"name"=>"🎯Direct","type"=>"select","proxies"=>["DIRECT","Proxies"]},
 {"name"=>"✈️Final","type"=>"select","proxies"=>["Proxies","🎯Direct",GROUP_REFS]},
-NAT_GROUPS
-{"name"=>"🌍 其他地区","type"=>"select","include-all"=>true,"proxies"=>["🌍 其他地区-自动"]},
-{"name"=>"🌍 其他地区-自动","type"=>"url-test","include-all"=>true,"url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50}
+NAT_GROUPSOTHER_GROUPS
 ]
 EOF
 )
-# 替换占位符（用 @ 做 sed 分隔符：NAT_GROUPS 含正则管道符 |，不能用 | 作分隔符）
-GROUPS=$(echo "$GROUPS" | sed "s@GROUP_REFS@${GROUP_REFS}@g; s@NAT_GROUPS@${NAT_GROUPS}@g")
+# 替换占位符（用 @ 做 sed 分隔符：NAT_GROUPS/OTHER_GROUPS 含正则管道符 |，不能用 | 作分隔符）
+GROUPS=$(echo "$GROUPS" | sed "s@GROUP_REFS@${GROUP_REFS}@g; s@NAT_GROUPS@${NAT_GROUPS}@g; s@OTHER_GROUPS@${OTHER_GROUPS}@g")
 ruby_edit "$CONFIG_FILE" "['proxy-groups']" "$GROUPS"
 
 # ============ 3. 替换 rules（整体替换）============
