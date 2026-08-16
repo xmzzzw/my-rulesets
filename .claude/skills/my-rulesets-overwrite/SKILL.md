@@ -123,6 +123,22 @@ mihomo 启动时下载 rule-provider（规则集），若下载流量**命中 `M
 
 `ruby_merge_hash` 用 `merge!`，只适用于 Hash（rule-providers/proxy-providers）。proxy-groups 是 Array，`merge!` 报 `undefined method merge! for Array`。**proxy-groups 必须用 `ruby_edit` 整体赋值**。
 
+### 坑 5：「其他地区」不能用裸 include-all，必须显式枚举
+
+国家分组用 `include-all=>true` + `filter` 只吸本国节点（正确）。但「🌍 其他地区」若也用裸 `include-all=>true` 且**无 filter**，会把订阅**全部**节点吸进来 → 香港/日本/美国等已建独立分组的节点在此重复出现。
+
+**解决**：「其他地区」改用**显式 proxies 列表**枚举未命中任何 ≥2 国家正则的节点（单节点国家天然落这里）。三模块（openclash_overwrite.sh / overwrite_script.js / convert.py）统一此逻辑。注意 mihomo 的 filter 用 RE2，**不支持负向断言 `(?!...)`**，故无法用排除式 filter。
+
+### 坑 6：节点名必须用 ruby YAML.load 提取（OpenClash 关键）
+
+OpenClash 下载订阅经 `yml_change.sh` 处理后，emoji 节点名在 YAML 里被转义为字面 `"\U0001F1F5\U0001F1ED"`（反斜杠+U，非真实 emoji 字节 f0 9f...）。**awk/sed 手工解析只能拿到 `\U0001F1F5` 字面串**，显式 proxies 引用的节点名与 mihomo 加载（YAML 还原成真 emoji）后的真实节点名不一致 → mihomo fatal `not found` → 内核启动失败、节点全红。
+
+**解决**：用 `ruby -ryaml -e 'YAML.load_file(...)'` 提取 `proxies[].name`，Ruby 的 YAML parser 自动正确还原所有 `\U`/引号/反斜杠转义，得到真实 UTF-8 emoji 字节，且天然兼容 block/flow 两种 YAML 写法。OpenClash 软路由自带 `/usr/bin/ruby`。
+
+### 坑 7：国家代码 grep 须加词边界，单节点别误建组
+
+`grep -icE "ID"` 会大小写不敏感命中 `Valid`/`Provider` 里的 `ID` → 单节点国家计数虚高 ≥2 → 误建独立组。**英文国家代码必须加 `[^A-Za-z]` 词边界包夹**（`\b` 对 emoji/中文边界行为不定），emoji/中文用普通包含。
+
 ## 广播 IP 判定（机场节点 IP 归属）
 
 **机场「广播 IP」**：所有节点共享同一出口 IP 池，标注国家与实际出口可能不一致。
