@@ -178,7 +178,7 @@ RULE-SET,https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/nexitallyy_Ex
 6. 保存
 
 **③ 验证**
-- 代理页应显示：`Proxies` 顶层组 → 6 个国家分组 + 🌍 其他地区
+- 代理页应显示：`Proxies` 顶层组 → 应用策略组（AI/Netflix/...）→ `🎯Direct` → `✈️Final` → 国家分组（6 国 + 🌍 其他地区）及各自 `-自动`
 - 每个国家分组可展开看到该国节点
 - AI 组可选择（含全部国家分组）
 - 流量进度条正常显示
@@ -232,7 +232,7 @@ RULE-SET,https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/nexitallyy_Ex
 
 #### 方式二：使用完整配置模板
 
-若需要完整的「国家分组 + 自动选择」策略组结构，可参考本项目此前生成的 Surge 模板（在本地 `~/Desktop/MyRules_Flower_ss_Surge.conf`），或让 Claude Code 基于本仓库重新生成。
+若需要完整的「国家分组 + 自动选择」策略组结构，可参考本项目此前生成的 Surge 模板（在本地 `~/Desktop/Flower_ss_Surge_MyRules.conf`），或让 Claude Code 基于本仓库重新生成。
 
 ---
 
@@ -290,7 +290,7 @@ function main(config) {
 }
 ```
 
-**规格**（与 FlClash_Flower 模板一致）：
+**规格**（与 `Flower_ss_Clash_MyRules.yaml` 模板一致）：
 - proxies：保留订阅节点（90 个）
 - proxy-groups：36 个（6 国家分组 + 各 -自动 + 🌍其他地区 + 19 应用组 + Direct + Final）
 - rule-providers：32 个
@@ -355,16 +355,10 @@ ruby_edit "$CONFIG_FILE" "['rules']" '["RULE-SET,provider_4,AI","GEOIP,CN,🎯Di
 
 ## 8. 策略组结构
 
-覆写脚本生成的策略组结构：
+覆写脚本生成的策略组结构（**顺序严格：Proxies → 应用组 → 🎯Direct → ✈️Final → 国家分组**）：
 
 ```
 🚀 顶层：Proxies (select)
-├── 🇭🇰 香港 (select) → 🇭🇰 香港-自动 (url-test, 故障转移)
-├── 🇺🇸 美国 (select) → 🇺🇸 美国-自动 (url-test)
-├── 🇯🇵 日本 (select) → 🇯🇵 日本-自动 (url-test)
-├── 🇸🇬 新加坡 (select) → 🇸🇬 新加坡-自动 (url-test)
-├── 🇨🇳 台湾 (select) → 🇨🇳 台湾-自动 (url-test)
-├── 🌍 其他地区 (select) → 🌍 其他地区-自动 (url-test)
 
 应用策略组（引用国家分组）：
 Netflix / HBO / DisneyPlus / YouTube / Bahamut / Bilibili / MyTVSuper /
@@ -373,6 +367,15 @@ Scholar / Apple / Google / Tiktok
 
 兜底：
 🎯Direct (直连) / ✈️Final (最终)
+
+国家分组（放 Final 之后，各带 -自动 故障转移）：
+├── 🇭🇰 香港 (select) → 🇭🇰 香港-自动 (url-test)
+├── 🇺🇸 美国 (select) → 🇺🇸 美国-自动 (url-test)
+├── 🇯🇵 日本 (select) → 🇯🇵 日本-自动 (url-test)
+├── 🇸🇬 新加坡 (select) → 🇸🇬 新加坡-自动 (url-test)
+├── 🇨🇳 台湾 (select) → 🇨🇳 台湾-自动 (url-test)
+├── 🇰🇷 韩国 (select) → 🇰🇷 韩国-自动 (url-test)
+└── 🌍 其他地区 (select) → 🌍 其他地区-自动 (url-test)
 ```
 
 **AI 策略组**（select，可手动选任意节点，不固定美国出口）：

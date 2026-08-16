@@ -137,7 +137,10 @@ function main(config, profileName) { ...; return config; }
 4. 验证（见 [任务 F](#任务-f验证与测试)）
 5. 部署到目标客户端
 
-**命名规范**：`MyRules_<机场>_<协议>_Surge.conf` / `FlClash_<机场>_<协议>.yaml`。
+**命名规范**（严格）：`<机场名称>_<协议>_<代理终端>_MyRules.<ext>`
+- 代理终端：`Surge` / `Clash`（Clash 系统一，FlClash/Clash Verge 均用）等
+- 规则名统一用 `MyRules`
+- 示例：`CreamData_Anytls_Clash_MyRules.yaml`、`Flower_ss_Surge_MyRules.conf`
 
 **手动规格**（convert.py 不适用时）：
 ```
@@ -162,7 +165,7 @@ function main(config, profileName) { ...; return config; }
 2. 订阅右键 → 新建脚本 profile
 3. 粘贴 `overwrite_script.js` 内容（`function main(config, profileName)`）
 
-**验证**：代理页应有 `Proxies` 顶层 → 国家分组 → 应用组 → Direct/Final；节点可展开。
+**验证**：代理页应有 `Proxies` 顶层 → 应用组 → Direct/Final → 国家分组；节点可展开。
 
 ---
 

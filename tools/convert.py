@@ -222,6 +222,43 @@ def to_surge(nodes, groups, rules, general_sections=None):
         out.append(r)
     return "\n".join(out)
 
+def auto_output_name(args, protos):
+    """按「机场名称_协议_代理终端_MyRules.<ext>」生成输出文件名。
+
+    - 机场名称：从订阅 URL 的 filename 参数 / host 推断；无则用 'MyAirport'
+    - 协议：--protocol 指定，否则取节点中占比最大的协议
+    - 代理终端：args.format（surge/clash → Surge/Clash）
+    - 规则名：固定 MyRules
+    - 扩展名：surge → .conf，clash → .yaml
+    """
+    # 机场名：filename 参数取首段（CreamData_Anytls_Clash.yaml → CreamData）
+    src = args.input or ''
+    name = 'MyAirport'
+    m = re.search(r'filename=([^&]+)', src)
+    if m:
+        name = m.group(1).split('.')[0].split('_')[0]
+    elif src.startswith('http'):
+        host = re.sub(r'^https?://', '', src).split('/')[0]
+        if host:
+            name = host.split('.')[0].capitalize()
+    else:
+        base = os.path.basename(src)
+        if base and '.' in base:
+            name = base.rsplit('.', 1)[0]
+
+    # 协议
+    proto = args.protocol
+    if not proto and protos:
+        proto = max(protos.items(), key=lambda x: x[1])[0]
+
+    # 终端 + 扩展名
+    fmt = args.format if args.format in ('surge', 'clash') else 'clash'
+    term = 'Surge' if fmt == 'surge' else 'Clash'
+    ext = 'conf' if fmt == 'surge' else 'yaml'
+
+    return f"{name}_{proto}_{term}_MyRules.{ext}"
+
+
 # ============ 主入口 ============
 def main():
     parser = argparse.ArgumentParser(description='my-rulesets 配置转换工具')
@@ -284,24 +321,24 @@ def main():
     # 输出
     if args.format == 'auto':
         args.format = 'surge' if is_surge_conf(content) else 'clash'
-    
+
     if args.format == 'clash':
         output = to_clash(nodes, groups, rules)
     else:
         output = to_surge(nodes, groups, rules)
-    
+
     # 订阅刷新：如果输入是 URL 且开启选项，用 #!include 替换 [Proxy] 段
     if args.subscription_refresh and (args.input.startswith('http')):
         nl = chr(10)
         output = output.replace("[Proxy]" + nl, "[Proxy]" + nl + "#!include " + args.input + nl, 1)
-    
-    if args.output:
-        with open(args.output, 'w', encoding='utf-8') as f:
-            f.write(output)
-        print(f"✅ 已写入: {args.output}")
-    else:
-        print("\n=== 输出预览（前 30 行）===")
-        print("\n".join(output.splitlines()[:30]))
+
+    # 输出路径：未指定时按「机场名称_协议_代理终端_MyRules.<ext>」自动命名
+    if not args.output:
+        args.output = auto_output_name(args, protos)
+
+    with open(args.output, 'w', encoding='utf-8') as f:
+        f.write(output)
+    print(f"✅ 已写入: {args.output}")
 
 if __name__ == '__main__':
     main()
