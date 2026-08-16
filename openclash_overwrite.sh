@@ -37,7 +37,7 @@ RULE_PATH="./rule_provider"
 # ============ 辅助：压缩为单行（去掉换行与多余空格）============
 # heredoc 内容 → 单行字符串。传给 ruby_* 函数必须是单行！
 oneliner() {
-   tr -d '\n' | sed 's/[ 	][ 	]*/ /g'
+   tr -d '\n' | sed 's/[[:space:]][[:space:]]*/ /g'
 }
 
 # ============ 1. 注入 32 个 rule-providers（引用 GitHub 规则集）============
@@ -99,59 +99,59 @@ grep -E '^[ \t]*-[ \t]*name:' "$CONFIG_FILE" \
 # 每行：组名|正则。正则为 grep -E 语法。
 # 统计命中该正则的节点数，≥2 才建组。
 cat > /tmp/myrules_country_table << 'TABEOF'
-🇭🇰 香港|(香港|HK|Hong ?Kong)
-🇸🇬 新加坡|(新加坡|SG|Singapore)
-🇯🇵 日本|(日本|JP|Japan)
-🇺🇸 美国|(美国|US|America)
-🇨🇳 台湾|(台湾|TW|Taiwan)
-🇰🇷 韩国|(韩国|KR|Korea)
-🇬🇧 英国|(英国|GB|UK|United ?Kingdom)
-🇩🇪 德国|(德国|DE|Germany)
-🇦🇺 澳大利亚|(澳大利亚|澳洲|AU|Australia)
-🇨🇦 加拿大|(加拿大|CA|Canada)
-🇫🇷 法国|(法国|FR|France)
-🇷🇺 俄罗斯|(俄罗斯|RU|Russia)
-🇳🇱 荷兰|(荷兰|NL|Netherlands)
-🇮🇳 印度|(印度|IN|India)
-🇹🇷 土耳其|(土耳其|TR|Turkey)
-🇦🇪 阿联酋|(阿联酋|迪拜|AE|Dubai)
-🇮🇹 意大利|(意大利|IT|Italy)
-🇪🇸 西班牙|(西班牙|ES|Spain)
-🇧🇷 巴西|(巴西|BR|Brazil)
-🇲🇾 马来西亚|(马来西亚|MY|Malaysia)
-🇻🇳 越南|(越南|VN|Vietnam)
-🇹🇭 泰国|(泰国|TH|Thailand)
-🇵🇭 菲律宾|(菲律宾|PH|Philippines)
-🇮🇩 印尼|(印尼|ID|Indonesia)
-🇲🇽 墨西哥|(墨西哥|MX|Mexico)
-🇳🇿 新西兰|(新西兰|NZ|New ?Zealand)
-🇮🇪 爱尔兰|(爱尔兰|IE|Ireland)
-🇸🇪 瑞典|(瑞典|SE|Sweden)
-🇳🇴 挪威|(挪威|NO|Norway)
-🇫🇮 芬兰|(芬兰|FI|Finland)
-🇨🇭 瑞士|(瑞士|CH|Switzerland)
-🇵🇱 波兰|(波兰|PL|Poland)
-🇦🇷 阿根廷|(阿根廷|AR|Argentina)
-🇪🇬 埃及|(埃及|EG|Egypt)
-🇿🇦 南非|(南非|ZA|South ?Africa)
+🇭🇰 香港@(香港|HK|Hong ?Kong)
+🇸🇬 新加坡@(新加坡|SG|Singapore)
+🇯🇵 日本@(日本|JP|Japan)
+🇺🇸 美国@(美国|US|America)
+🇨🇳 台湾@(台湾|TW|Taiwan)
+🇰🇷 韩国@(韩国|KR|Korea)
+🇬🇧 英国@(英国|GB|UK|United ?Kingdom)
+🇩🇪 德国@(德国|DE|Germany)
+🇦🇺 澳大利亚@(澳大利亚|澳洲|AU|Australia)
+🇨🇦 加拿大@(加拿大|CA|Canada)
+🇫🇷 法国@(法国|FR|France)
+🇷🇺 俄罗斯@(俄罗斯|RU|Russia)
+🇳🇱 荷兰@(荷兰|NL|Netherlands)
+🇮🇳 印度@(印度|IN|India)
+🇹🇷 土耳其@(土耳其|TR|Turkey)
+🇦🇪 阿联酋@(阿联酋|迪拜|AE|Dubai)
+🇮🇹 意大利@(意大利|IT|Italy)
+🇪🇸 西班牙@(西班牙|ES|Spain)
+🇧🇷 巴西@(巴西|BR|Brazil)
+🇲🇾 马来西亚@(马来西亚|MY|Malaysia)
+🇻🇳 越南@(越南|VN|Vietnam)
+🇹🇭 泰国@(泰国|TH|Thailand)
+🇵🇭 菲律宾@(菲律宾|PH|Philippines)
+🇮🇩 印尼@(印尼|ID|Indonesia)
+🇲🇽 墨西哥@(墨西哥|MX|Mexico)
+🇳🇿 新西兰@(新西兰|NZ|New ?Zealand)
+🇮🇪 爱尔兰@(爱尔兰|IE|Ireland)
+🇸🇪 瑞典@(瑞典|SE|Sweden)
+🇳🇴 挪威@(挪威|NO|Norway)
+🇫🇮 芬兰@(芬兰|FI|Finland)
+🇨🇭 瑞士@(瑞士|CH|Switzerland)
+🇵🇱 波兰@(波兰|PL|Poland)
+🇦🇷 阿根廷@(阿根廷|AR|Argentina)
+🇪🇬 埃及@(埃及|EG|Egypt)
+🇿🇦 南非@(南非|ZA|South ?Africa)
 TABEOF
 
 # ---------- 2.3 统计国家节点数，生成 ≥2 的分组 ----------
 # 输出文件每行：组名|正则|计数（节点多的排前面）
 MATCHED_FILE=$(mktemp)
-while IFS='|' read -r name regex; do
+while IFS='@' read -r name regex; do
     [ -z "$name" ] && continue
     cnt=$(grep -icE "$regex" "$NODE_NAMES_FILE" || true)
     [ "$cnt" -ge 2 ] && echo "$name|$regex|$cnt"
 done < /tmp/myrules_country_table > "$MATCHED_FILE"
 # 按计数降序排序
-sort -t'|' -k3 -rn "$MATCHED_FILE" > /tmp/myrules_matched_sorted
+sort -t'@' -k3 -rn "$MATCHED_FILE" > /tmp/myrules_matched_sorted
 
 # ---------- 2.4 生成国家分组 Ruby 片段（select + url-test 自动）----------
 # NAT_GROUPS：形如
 #   {"name"=>"🇫🇷 法国","type"=>"select","include-all"=>true,"filter"=>"...","proxies"=>["🇫🇷 法国-自动"]},
 #   {"name"=>"🇫🇷 法国-自动","type"=>"url-test","include-all"=>true,"filter"=>"...","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},
-NAT_GROUPS=$(while IFS='|' read -r name regex cnt; do
+NAT_GROUPS=$(while IFS='@' read -r name regex cnt; do
     [ -z "$name" ] && continue
     printf '{"name"=>"%s","type"=>"select","include-all"=>true,"filter"=>"(?i)%s","proxies"=>["%s-自动"]},' "$name" "$regex" "$name"
     printf '{"name"=>"%s-自动","type"=>"url-test","include-all"=>true,"filter"=>"(?i)%s","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},' "$name" "$regex"
@@ -159,7 +159,7 @@ done < /tmp/myrules_matched_sorted)
 
 # ---------- 2.5 生成国家组名引用列表 ----------
 # GROUP_REFS：形如 "🇭🇰 香港","🇫🇷 法国",...,"🌍 其他地区"（供 Proxies/应用组/Final 引用）
-GROUP_REFS=$(while IFS='|' read -r name regex cnt; do
+GROUP_REFS=$(while IFS='@' read -r name regex cnt; do
     [ -z "$name" ] && continue
     printf '"%s",' "$name"
 done < /tmp/myrules_matched_sorted)
@@ -197,8 +197,8 @@ NAT_GROUPS
 ]
 EOF
 )
-# 替换占位符
-GROUPS=$(echo "$GROUPS" | sed "s|GROUP_REFS|${GROUP_REFS}|g; s|NAT_GROUPS|${NAT_GROUPS}|g")
+# 替换占位符（用 @ 做 sed 分隔符：NAT_GROUPS 含正则管道符 |，不能用 | 作分隔符）
+GROUPS=$(echo "$GROUPS" | sed "s@GROUP_REFS@${GROUP_REFS}@g; s@NAT_GROUPS@${NAT_GROUPS}@g")
 ruby_edit "$CONFIG_FILE" "['proxy-groups']" "$GROUPS"
 
 # ============ 3. 替换 rules（整体替换）============
