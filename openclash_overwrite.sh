@@ -173,10 +173,13 @@ MATCHED_FILE=$(mktemp)
 while IFS='@' read -r name regex; do
     [ -z "$name" ] && continue
     cnt=$(grep -icE "$regex" "$NODE_NAMES_FILE" || true)
-    [ "$cnt" -ge 2 ] && echo "$name@$regex@$cnt"
+    [ "$cnt" -ge 2 ] && echo "$cnt@$name@$regex"
 done < /tmp/myrules_country_table > "$MATCHED_FILE"
-# 按计数降序排序
-sort -t'@' -k3 -rn "$MATCHED_FILE" > /tmp/myrules_matched_sorted
+# 按计数降序排序（国家分组按节点数排序：节点最多的国家排最前）
+# ⚠️ 计数必须作第一列再用 -k1,1 -rn：原版用 -k3 排「名@正则@计数」时，
+# busybox sort 对含多字节 emoji 的行按字节比较，-k3 字段定位被干扰 → 排序错乱
+# （实测：美国18→土耳其2→新加坡19→香港25 混乱）。前置纯数值列后稳定降序。
+sort -t'@' -k1,1 -rn "$MATCHED_FILE" > /tmp/myrules_matched_sorted
 
 # ---------- 2.3b 计算「🌍 其他地区」成员：未被任何 ≥2 国家正则命中的节点 ----------
 # 修复「其他地区」含已分配国家分组节点的 bug：
@@ -189,7 +192,7 @@ OTHER_NODES_FILE=$(mktemp)
 while IFS= read -r node; do
     [ -z "$node" ] && continue
     matched=0
-    while IFS='@' read -r cname cregex ccnt; do
+    while IFS='@' read -r ccnt cname cregex; do
         [ -z "$cname" ] && continue
         if printf '%s' "$node" | grep -qiE "$cregex"; then matched=1; break; fi
     done < /tmp/myrules_matched_sorted
@@ -213,7 +216,7 @@ OTHER_REFS="${OTHER_REFS%,}"   # 去末尾逗号（无节点时为空串）
 # NAT_GROUPS：形如
 #   {"name"=>"🇫🇷 法国","type"=>"select","include-all"=>true,"filter"=>"(?i)...","proxies"=>["🇫🇷 法国-自动"]},
 #   {"name"=>"🇫🇷 法国-自动","type"=>"url-test","include-all"=>true,"filter"=>"(?i)...","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},
-NAT_GROUPS=$(while IFS='@' read -r name regex cnt; do
+NAT_GROUPS=$(while IFS='@' read -r cnt name regex; do
     [ -z "$name" ] && continue
     printf '{"name"=>"%s","type"=>"select","include-all"=>true,"filter"=>"(?i)%s","proxies"=>["%s-自动"]},' "$name" "$regex" "$name"
     printf '{"name"=>"%s-自动","type"=>"url-test","include-all"=>true,"filter"=>"(?i)%s","url"=>"http://www.gstatic.com/generate_204","interval"=>300,"tolerance"=>50},' "$name" "$regex"
@@ -223,7 +226,7 @@ done < /tmp/myrules_matched_sorted)
 # GROUP_REFS：形如 "🇭🇰 香港","🇫🇷 法国",...[:,"🌍 其他地区"]
 # 「🌍 其他地区」仅在有未归类节点（OTHER_REFS 非空）时才加入引用，
 # 避免引用一个无成员的空组（mihomo url-test 无节点会启动失败）。
-GROUP_REFS=$(while IFS='@' read -r name regex cnt; do
+GROUP_REFS=$(while IFS='@' read -r cnt name regex; do
     [ -z "$name" ] && continue
     printf '"%s",' "$name"
 done < /tmp/myrules_matched_sorted)
