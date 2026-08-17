@@ -27,9 +27,15 @@ description: 各 Clash 系客户端及主流代理软件的「机场订阅覆写
 
 各客户端「订阅拉节点 + 覆写注入分流」的统一思想：
 1. **保留订阅的 proxies（节点）**
-2. **重建 proxy-groups**（国家分组 + 各 -自动 url-test + 应用组 + Direct/Final）
+2. **重建 proxy-groups**（顺序严格：Proxies → 应用组 → 🎯Direct → ✈️Final → 国家分组 + 各 -自动）
+   - **国家分组必须放 Final 后面**（与 overwrite_script.js / openclash_overwrite.sh / convert.py 一致）
+   - **国家分组动态生成：任一国家节点 ≥2 即建独立分组**（select + url-test 自动），≤1 节点并入 🌍 其他地区
+   - 不限于固定 6/10 国：法国/俄罗斯/荷兰等 ≥2 节点也建组（overwrite_script.js 与 openclash_overwrite.sh 均已实现）
 3. **注入 rule-providers**（引用 my-rulesets 的 clash/ 规则集）
 4. **重写 rules**（RULE-SET + GEOIP,CN + MATCH）
+
+> **配置文件命名规范（严格）**：`<机场名称>_<协议>_<代理终端>_MyRules.<ext>`
+> 例：`CreamData_Anytls_Clash_MyRules.yaml`、`Flower_ss_Surge_MyRules.conf`
 
 ## 各客户端覆写方法
 
@@ -41,7 +47,9 @@ description: 各 Clash 系客户端及主流代理软件的「机场订阅覆写
 ### Clash Verge Rev（Windows）
 - 订阅右键 → 新建脚本 profile
 - `function main(config, profileName)` 入口，返回改后的 config
+- **脚本 profile 不支持从 URL 直拉脚本**（本地文件，脚本环境隔离）→ 手动粘贴或 curl/scp 同步
 - 新版已移除 prepend/append，改「编辑规则/编辑代理组」，但脚本 profile 仍可用
+- **Windows 自动同步**：`scp overwrite_script.js` 到 `%APPDATA%\io.github.clash-verge-rev.clash-verge-rev\profiles\<订阅挂载的脚本>.js`，重启 `clash-verge` 进程生效（详见记忆 [[win-clash-verge-setup]]）
 
 ### OpenClash（软路由）
 - 覆写脚本 → `/etc/openclash/custom/openclash_custom_overwrite.sh`
