@@ -43,6 +43,7 @@ description: 各 Clash 系客户端及主流代理软件的「机场订阅覆写
 - 位置：配置 → 覆写 → 脚本模式
 - 支持从 URL 导入脚本：粘贴 `overwrite_script.js` 的 raw URL
 - `main(config)` 入口，JS 直接改 config 对象返回
+- ⚠️ **「外部获取」URL 导入是一次性快照，GitHub 更新不会自动同步到手机**（实测踩坑：改完仓库策略组顺序后手机仍显示旧排序）。仓库每次改 `overwrite_script.js` 后必须提醒用户在 FlClash 里重新「外部获取」导入（被墙则换 jsdelivr：`https://testingcf.jsdelivr.net/gh/xmzzzw/my-rulesets@main/overwrite_script.js`），Clash Verge 有 curl/scp 同步、FlClash 没有
 
 ### Clash Verge Rev（Windows）
 - 订阅右键 → 新建脚本 profile

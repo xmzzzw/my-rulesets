@@ -73,6 +73,13 @@
 **脚本特征**：入口 `function main(config, profileName)`，FlClash 只传 `config`，
 直接改 config 对象返回（与 Clash Verge 同一份脚本，双端兼容）。
 
+> ⚠️ **「外部获取」是一次性快照**：URL 导入后脚本内容存在本地，GitHub 仓库更新
+> **不会自动同步到手机**（实测踩坑：08-16 修正策略组顺序后，手机上仍是旧排序，
+> 直到手动重新导入才生效）。以后每次仓库改了 `overwrite_script.js`，都要在
+> FlClash 脚本编辑器里重新「外部获取」一次，或直接删旧覆写重建。
+> 被墙拉不动时导入 URL 可换成
+> `https://testingcf.jsdelivr.net/gh/xmzzzw/my-rulesets@main/overwrite_script.js`。
+
 > 若 URL 导入/规则集下载失败（被墙），可把脚本内 `ruleSetUrl` 换成 jsdelivr：
 > `https://testingcf.jsdelivr.net/gh/xmzzzw/my-rulesets@main/clash/`。
 
