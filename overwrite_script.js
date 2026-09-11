@@ -24,49 +24,64 @@ function main(config, profileName) {
 
   // 按国家归类节点（从节点名识别国家）
   // 完整国家映射：emoji / 国家代码 / 中文名 均可识别
+  // ⚠️ 国家代码须加非字母边界 (?:^|[^A-Za-z])XX(?:[^A-Za-z]|$)（与 openclash_overwrite.sh 一致）：
+  //   裸 "US"/"ID"/"IN" 会误命中 Status/Provider/Valid 等英文词 → 误归类/误建组
   const countryPatterns = {
-    '🇭🇰 香港': /香港|🇭🇰|HK|Hong\s?Kong/i,
-    '🇸🇬 新加坡': /新加坡|🇸🇬|SG|Singapore/i,
-    '🇯🇵 日本': /日本|🇯🇵|JP|Japan/i,
-    '🇺🇸 美国': /美国|🇺🇸|🇺🇲|US|America/i,
-    '🇨🇳 台湾': /台湾|🇨🇳|🇹🇼|TW|Taiwan/i,
-    '🇰🇷 韩国': /韩国|🇰🇷|KR|Korea/i,
-    '🇬🇧 英国': /英国|🇬🇧|UK|GB|United\s?Kingdom/i,
-    '🇩🇪 德国': /德国|🇩🇪|DE|Germany/i,
-    '🇦🇺 澳大利亚': /澳大利亚|澳洲|🇦🇺|AU|Australia/i,
-    '🇨🇦 加拿大': /加拿大|🇨🇦|CA|Canada/i,
-    '🇫🇷 法国': /法国|🇫🇷|FR|France/i,
-    '🇷🇺 俄罗斯': /俄罗斯|🇷🇺|RU|Russia/i,
-    '🇳🇱 荷兰': /荷兰|🇳🇱|NL|Netherlands/i,
-    '🇮🇳 印度': /印度|🇮🇳|IN|India/i,
-    '🇹🇷 土耳其': /土耳其|🇹🇷|TR|Turkey/i,
-    '🇦🇪 阿联酋': /阿联酋|迪拜|🇦🇪|AE|Dubai/i,
-    '🇮🇹 意大利': /意大利|🇮🇹|IT|Italy/i,
-    '🇪🇸 西班牙': /西班牙|🇪🇸|ES|Spain/i,
-    '🇧🇷 巴西': /巴西|🇧🇷|BR|Brazil/i,
-    '🇲🇾 马来西亚': /马来西亚|🇲🇾|MY|Malaysia/i,
-    '🇻🇳 越南': /越南|🇻🇳|VN|Vietnam/i,
-    '🇹🇭 泰国': /泰国|🇹🇭|TH|Thailand/i,
-    '🇵🇭 菲律宾': /菲律宾|🇵🇭|PH|Philippines/i,
-    '🇮🇩 印尼': /印尼|🇮🇩|ID|Indonesia/i,
-    '🇲🇽 墨西哥': /墨西哥|🇲🇽|MX|Mexico/i,
-    '🇳🇿 新西兰': /新西兰|🇳🇿|NZ|New\s?Zealand/i,
-    '🇮🇪 爱尔兰': /爱尔兰|🇮🇪|IE|Ireland/i,
-    '🇸🇪 瑞典': /瑞典|🇸🇪|SE|Sweden/i,
-    '🇳🇴 挪威': /挪威|🇳🇴|NO|Norway/i,
-    '🇫🇮 芬兰': /芬兰|🇫🇮|FI|Finland/i,
-    '🇨🇭 瑞士': /瑞士|🇨🇭|CH|Switzerland/i,
-    '🇵🇱 波兰': /波兰|🇵🇱|PL|Poland/i,
-    '🇦🇷 阿根廷': /阿根廷|🇦🇷|AR|Argentina/i,
-    '🇪🇬 埃及': /埃及|🇪🇬|EG|Egypt/i,
-    '🇿🇦 南非': /南非|🇿🇦|ZA|South\s?Africa/i
+    '🇭🇰 香港': /香港|🇭🇰|(?:^|[^A-Za-z])HK(?:[^A-Za-z]|$)|Hong\s?Kong/i,
+    '🇸🇬 新加坡': /新加坡|🇸🇬|(?:^|[^A-Za-z])SG(?:[^A-Za-z]|$)|Singapore/i,
+    '🇯🇵 日本': /日本|🇯🇵|(?:^|[^A-Za-z])JP(?:[^A-Za-z]|$)|Japan/i,
+    '🇺🇸 美国': /美国|🇺🇸|🇺🇲|(?:^|[^A-Za-z])US(?:[^A-Za-z]|$)|America/i,
+    '🇨🇳 台湾': /台湾|🇨🇳|🇹🇼|(?:^|[^A-Za-z])TW(?:[^A-Za-z]|$)|Taiwan/i,
+    '🇰🇷 韩国': /韩国|🇰🇷|(?:^|[^A-Za-z])KR(?:[^A-Za-z]|$)|Korea/i,
+    '🇬🇧 英国': /英国|🇬🇧|(?:^|[^A-Za-z])(?:UK|GB)(?:[^A-Za-z]|$)|United\s?Kingdom/i,
+    '🇩🇪 德国': /德国|🇩🇪|(?:^|[^A-Za-z])DE(?:[^A-Za-z]|$)|Germany/i,
+    '🇦🇺 澳大利亚': /澳大利亚|澳洲|🇦🇺|(?:^|[^A-Za-z])AU(?:[^A-Za-z]|$)|Australia/i,
+    '🇨🇦 加拿大': /加拿大|🇨🇦|(?:^|[^A-Za-z])CA(?:[^A-Za-z]|$)|Canada/i,
+    '🇫🇷 法国': /法国|🇫🇷|(?:^|[^A-Za-z])FR(?:[^A-Za-z]|$)|France/i,
+    '🇷🇺 俄罗斯': /俄罗斯|🇷🇺|(?:^|[^A-Za-z])RU(?:[^A-Za-z]|$)|Russia/i,
+    '🇳🇱 荷兰': /荷兰|🇳🇱|(?:^|[^A-Za-z])NL(?:[^A-Za-z]|$)|Netherlands/i,
+    '🇮🇳 印度': /印度|🇮🇳|(?:^|[^A-Za-z])IN(?:[^A-Za-z]|$)|India/i,
+    '🇹🇷 土耳其': /土耳其|🇹🇷|(?:^|[^A-Za-z])TR(?:[^A-Za-z]|$)|Turkey/i,
+    '🇦🇪 阿联酋': /阿联酋|迪拜|🇦🇪|(?:^|[^A-Za-z])AE(?:[^A-Za-z]|$)|Dubai/i,
+    '🇮🇹 意大利': /意大利|🇮🇹|(?:^|[^A-Za-z])IT(?:[^A-Za-z]|$)|Italy/i,
+    '🇪🇸 西班牙': /西班牙|🇪🇸|(?:^|[^A-Za-z])ES(?:[^A-Za-z]|$)|Spain/i,
+    '🇧🇷 巴西': /巴西|🇧🇷|(?:^|[^A-Za-z])BR(?:[^A-Za-z]|$)|Brazil/i,
+    '🇲🇾 马来西亚': /马来西亚|🇲🇾|(?:^|[^A-Za-z])MY(?:[^A-Za-z]|$)|Malaysia/i,
+    '🇻🇳 越南': /越南|🇻🇳|(?:^|[^A-Za-z])VN(?:[^A-Za-z]|$)|Vietnam/i,
+    '🇹🇭 泰国': /泰国|🇹🇭|(?:^|[^A-Za-z])TH(?:[^A-Za-z]|$)|Thailand/i,
+    '🇵🇭 菲律宾': /菲律宾|🇵🇭|(?:^|[^A-Za-z])PH(?:[^A-Za-z]|$)|Philippines/i,
+    '🇮🇩 印尼': /印尼|印度尼西亚|🇮🇩|(?:^|[^A-Za-z])ID(?:[^A-Za-z]|$)|Indonesia/i,
+    '🇲🇽 墨西哥': /墨西哥|🇲🇽|(?:^|[^A-Za-z])MX(?:[^A-Za-z]|$)|Mexico/i,
+    '🇳🇿 新西兰': /新西兰|🇳🇿|(?:^|[^A-Za-z])NZ(?:[^A-Za-z]|$)|New\s?Zealand/i,
+    '🇮🇪 爱尔兰': /爱尔兰|🇮🇪|(?:^|[^A-Za-z])IE(?:[^A-Za-z]|$)|Ireland/i,
+    '🇸🇪 瑞典': /瑞典|🇸🇪|(?:^|[^A-Za-z])SE(?:[^A-Za-z]|$)|Sweden/i,
+    '🇳🇴 挪威': /挪威|🇳🇴|(?:^|[^A-Za-z])NO(?:[^A-Za-z]|$)|Norway/i,
+    '🇫🇮 芬兰': /芬兰|🇫🇮|(?:^|[^A-Za-z])FI(?:[^A-Za-z]|$)|Finland/i,
+    '🇨🇭 瑞士': /瑞士|🇨🇭|(?:^|[^A-Za-z])CH(?:[^A-Za-z]|$)|Switzerland/i,
+    '🇵🇱 波兰': /波兰|🇵🇱|(?:^|[^A-Za-z])PL(?:[^A-Za-z]|$)|Poland/i,
+    '🇦🇷 阿根廷': /阿根廷|🇦🇷|(?:^|[^A-Za-z])AR(?:[^A-Za-z]|$)|Argentina/i,
+    '🇪🇬 埃及': /埃及|🇪🇬|(?:^|[^A-Za-z])EG(?:[^A-Za-z]|$)|Egypt/i,
+    '🇿🇦 南非': /南非|🇿🇦|(?:^|[^A-Za-z])ZA(?:[^A-Za-z]|$)|South\s?Africa/i,
+    '🇺🇦 乌克兰': /乌克兰|🇺🇦|(?:^|[^A-Za-z])UA(?:[^A-Za-z]|$)|Ukraine/i,
+    '🇵🇹 葡萄牙': /葡萄牙|🇵🇹|(?:^|[^A-Za-z])PT(?:[^A-Za-z]|$)|Portugal/i,
+    '🇩🇰 丹麦': /丹麦|🇩🇰|(?:^|[^A-Za-z])DK(?:[^A-Za-z]|$)|Denmark/i,
+    '🇧🇪 比利时': /比利时|🇧🇪|(?:^|[^A-Za-z])BE(?:[^A-Za-z]|$)|Belgium/i,
+    '🇦🇹 奥地利': /奥地利|🇦🇹|(?:^|[^A-Za-z])AT(?:[^A-Za-z]|$)|Austria/i,
+    '🇭🇺 匈牙利': /匈牙利|🇭🇺|(?:^|[^A-Za-z])HU(?:[^A-Za-z]|$)|Hungary/i,
+    '🇨🇿 捷克': /捷克|🇨🇿|(?:^|[^A-Za-z])CZ(?:[^A-Za-z]|$)|Czech/i,
+    '🇬🇷 希腊': /希腊|🇬🇷|(?:^|[^A-Za-z])GR(?:[^A-Za-z]|$)|Greece/i,
+    '🇮🇱 以色列': /以色列|🇮🇱|(?:^|[^A-Za-z])IL(?:[^A-Za-z]|$)|Israel/i,
+    '🇨🇱 智利': /智利|🇨🇱|(?:^|[^A-Za-z])CL(?:[^A-Za-z]|$)|Chile/i,
+    '🇨🇴 哥伦比亚': /哥伦比亚|🇨🇴|(?:^|[^A-Za-z])CO(?:[^A-Za-z]|$)|Colombia/i,
+    '🇵🇪 秘鲁': /秘鲁|🇵🇪|(?:^|[^A-Za-z])PE(?:[^A-Za-z]|$)|Peru/i
   };
 
   // 归类节点（跳过 Traffic/Expire 显示节点）
   const countryNodes = { '🌍 其他地区': [] };
   for (const [country] of Object.entries(countryPatterns)) countryNodes[country] = [];
   for (const node of nodes) {
-    if (/Traffic|Expire|流量|到期/i.test(node.name)) continue;
+    // 伪节点过滤（与 openclash_overwrite.sh 对齐）：流量/到期/套餐/官网/面板等显示节点不进组
+    if (/Traffic|Expire|流量|到期|剩余|套餐|官网|订阅|^Panel|^www\.|creamdata\.xyz|节点|主页/i.test(node.name)) continue;
     let matched = '🌍 其他地区';
     for (const [country, regex] of Object.entries(countryPatterns)) {
       if (regex.test(node.name)) { matched = country; break; }
@@ -83,10 +98,16 @@ function main(config, profileName) {
     }
   }
   // 国家分组顺序：节点多的在前；🌍 其他地区放最后
+  // ⚠️ 「其他地区」仅在有成员时才加入引用（与 openclash_overwrite.sh 一致）：
+  //   否则所有节点都命中国家时，Proxies/应用组会引用不存在的空组 → mihomo fatal 启动失败
   const groupNames = Object.keys(countryNodes)
     .filter(c => c !== '🌍 其他地区')
-    .sort((a, b) => countryNodes[b].length - countryNodes[a].length)
-    .concat('🌍 其他地区');
+    .sort((a, b) => countryNodes[b].length - countryNodes[a].length);
+  if (countryNodes['🌍 其他地区'].length > 0) {
+    groupNames.push('🌍 其他地区');
+  } else {
+    delete countryNodes['🌍 其他地区'];
+  }
 
   // 构建策略组（顺序：Proxies → 应用组 → Direct → Final → 国家分组）
   const groups = [];
@@ -98,9 +119,10 @@ function main(config, profileName) {
   });
 
   // 应用策略组（引用国家分组）
+  // 应用组顺序与 openclash_overwrite.sh / convert.py 严格一致：AI 在首位
   const appGroups = [
-    'Netflix', 'HBO', 'DisneyPlus', 'YouTube', 'Bahamut', 'Bilibili',
-    'MyTVSuper', 'AI', 'Telegram', 'Crypto', 'Steam', 'Epic', 'Xbox',
+    'AI', 'Netflix', 'HBO', 'DisneyPlus', 'YouTube', 'Bahamut', 'Bilibili',
+    'MyTVSuper', 'Telegram', 'Crypto', 'Steam', 'Epic', 'Xbox',
     'PlayStation', 'Microsoft', 'Scholar', 'Apple', 'Google', 'Tiktok'
   ];
   for (const app of appGroups) {
@@ -177,6 +199,13 @@ function main(config, profileName) {
   ];
   
   const rules = [];
+  // 内部流量/规则集下载直连放【最前】（与 openclash_overwrite.sh / convert.py 一致），
+  // 避免 mihomo 拉 rule-provider 时命中 MATCH 走代理导致 EOF 死循环（OpenClash 踩坑）
+  rules.push('DOMAIN-SUFFIX,jsdelivr.net,🎯Direct');
+  rules.push('DOMAIN-SUFFIX,githubusercontent.com,🎯Direct');
+  rules.push('DOMAIN-SUFFIX,github.com,🎯Direct');
+  rules.push('DOMAIN-SUFFIX,raw.githubusercontent.com,🎯Direct');
+  rules.push('DOMAIN-SUFFIX,creamdata.xyz,🎯Direct');
   ruleSets.forEach(([file, policy], idx) => {
     const providerName = `provider_${idx}`;
     ruleProviders[providerName] = {
@@ -186,13 +215,6 @@ function main(config, profileName) {
     };
     rules.push(`RULE-SET,${providerName},${policy}`);
   });
-  
-  // 内部流量/规则集下载直连，避免 mihomo 拉 rule-provider 时
-  // 命中 MATCH 走代理导致 EOF 死循环（OpenClash 踩坑，Windows 同样适用）
-  rules.push('DOMAIN-SUFFIX,jsdelivr.net,🎯Direct');
-  rules.push('DOMAIN-SUFFIX,githubusercontent.com,🎯Direct');
-  rules.push('DOMAIN-SUFFIX,github.com,🎯Direct');
-  rules.push('DOMAIN-SUFFIX,raw.githubusercontent.com,🎯Direct');
 
   // GEOIP + MATCH
   rules.push('GEOIP,CN,🎯Direct,no-resolve');

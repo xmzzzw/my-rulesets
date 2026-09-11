@@ -155,26 +155,38 @@ def is_surge_conf(content):
     return '[Proxy]' in content and ' = ss, ' in content or '[Proxy]' in content and ' = trojan, ' in content
 
 # ============ 策略组构建 ============
+# 伪节点过滤（与 overwrite_script.js / openclash_overwrite.sh 对齐）：
+# 流量/到期/套餐/官网/面板等显示节点不进任何策略组
+PSEUDO_NODE_RE = re.compile(
+    r'Traffic|Expire|流量|到期|剩余|套餐|官网|订阅|^Panel|^www\.|creamdata\.xyz|节点|主页',
+    re.I)
+
 def build_policy_groups(nodes, single_node_merge=True):
     """构建策略组（国家分组 + 自动选择 + 应用组），单节点国家合并"""
-    # 按国家归类
+    # 按国家归类（跳过伪节点）
     by_country = defaultdict(list)
     for node in nodes:
+        if PSEUDO_NODE_RE.search(node['name']):
+            continue
         country = detect_country(node['name'])
         by_country[country].append(node['name'])
-    
+
     # 单节点国家合并（≤1 节点 → 其他地区）
     if single_node_merge:
         singletons = [c for c, names in by_country.items() if len(names) <= 1]
         for c in singletons:
             by_country['🌍 其他地区'].extend(by_country[c])
             del by_country[c]
-    
-    # 排序：国家按节点数降序（节点最多的排最前），🌍 其他地区恒在最后
+
+    # 排序：国家按节点数降序（节点最多的排最前），🌍 其他地区在最后
+    # ⚠️ 「其他地区」仅在有成员时才加入引用（与另两端一致）：
+    #   否则 Proxies/应用组会引用不存在的空组 → mihomo fatal / KeyError
     countries = sorted(
         (c for c in by_country if c != '🌍 其他地区'),
         key=lambda x: -len(by_country[x])
-    ) + ['🌍 其他地区']
+    )
+    if by_country.get('🌍 其他地区'):
+        countries.append('🌍 其他地区')
     
     # 构建策略组
     groups = []
@@ -435,6 +447,11 @@ def to_clash(nodes, groups, rules, rule_providers=None):
         ("blackmatrix7_Twitter.list", "Proxies"), ("naiixi_Extra_CN.list", "🎯Direct"),
         ("naiixi_Extra_CN_2.list", "🎯Direct"), ("blackmatrix7_WeChat.list", "🎯Direct"),
     ]
+    # ⚠️ 内部流量直连规则必须放 rules 最前（与 JS/OpenClash 端一致，防 EOF 死循环）：
+    #   mihomo 拉 rule-provider 时若命中 MATCH 走代理 → 规则集下载 EOF → 死循环节点全红
+    for dom in ('jsdelivr.net', 'githubusercontent.com', 'github.com', 'raw.githubusercontent.com', 'creamdata.xyz'):
+        config['rules'].append(f'DOMAIN-SUFFIX,{dom},🎯Direct')
+
     for i, (file, policy) in enumerate(ruleset_files):
         pid = f"provider_{i}"
         config['rule-providers'][pid] = {
@@ -442,7 +459,7 @@ def to_clash(nodes, groups, rules, rule_providers=None):
             'url': RULE_BASE + file, 'path': f"./providers/{file}", 'interval': 86400,
         }
         config['rules'].append(f"RULE-SET,{pid},{policy}")
-    
+
     config['rules'].append('GEOIP,CN,🎯Direct,no-resolve')
     config['rules'].append('MATCH,✈️Final')
     

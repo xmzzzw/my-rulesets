@@ -9,7 +9,8 @@
 #   - 20 应用策略组（AI/Netflix/HBO/...）+ Proxies + 🎯Direct + ✈️Final
 #     + 动态国家分组（≥2 节点即建组）+ 各 -自动 + 🌍 其他地区
 #   - 32 个 rule-providers（引用 GitHub clash/ 规则集）
-#   - 规则：5 条内部直连 + 32 条 RULE-SET + GEOIP,CN + MATCH
+#   - 规则：5 条内部直连前置 + 32 条 RULE-SET + GEOIP,CN + MATCH
+#   - 国家表与 overwrite_script.js / convert.py 三端对齐（47 国）
 #
 # 关键实现约束（OpenClash 片段机制）：
 #   OpenClash 的 init.d 用 grep 按【行】提取覆写脚本生成的 Ruby 片段，
@@ -165,6 +166,18 @@ cat > /tmp/myrules_country_table << 'TABEOF'
 🇦🇷 阿根廷@(阿根廷|🇦🇷|[^A-Za-z]AR[^A-Za-z]|Argentina)
 🇪🇬 埃及@(埃及|🇪🇬|[^A-Za-z]EG[^A-Za-z]|Egypt)
 🇿🇦 南非@(南非|🇿🇦|[^A-Za-z]ZA[^A-Za-z]|South ?Africa)
+🇺🇦 乌克兰@(乌克兰|🇺🇦|[^A-Za-z]UA[^A-Za-z]|Ukraine)
+🇵🇹 葡萄牙@(葡萄牙|🇵🇹|[^A-Za-z]PT[^A-Za-z]|Portugal)
+🇩🇰 丹麦@(丹麦|🇩🇰|[^A-Za-z]DK[^A-Za-z]|Denmark)
+🇧🇪 比利时@(比利时|🇧🇪|[^A-Za-z]BE[^A-Za-z]|Belgium)
+🇦🇹 奥地利@(奥地利|🇦🇹|[^A-Za-z]AT[^A-Za-z]|Austria)
+🇭🇺 匈牙利@(匈牙利|🇭🇺|[^A-Za-z]HU[^A-Za-z]|Hungary)
+🇨🇿 捷克@(捷克|🇨🇿|[^A-Za-z]CZ[^A-Za-z]|Czech)
+🇬🇷 希腊@(希腊|🇬🇷|[^A-Za-z]GR[^A-Za-z]|Greece)
+🇮🇱 以色列@(以色列|🇮🇱|[^A-Za-z]IL[^A-Za-z]|Israel)
+🇨🇱 智利@(智利|🇨🇱|[^A-Za-z]CL[^A-Za-z]|Chile)
+🇨🇴 哥伦比亚@(哥伦比亚|🇨🇴|[^A-Za-z]CO[^A-Za-z]|Colombia)
+🇵🇪 秘鲁@(秘鲁|🇵🇪|[^A-Za-z]PE[^A-Za-z]|Peru)
 TABEOF
 
 # ---------- 2.3 统计国家节点数，生成 ≥2 的分组 ----------
