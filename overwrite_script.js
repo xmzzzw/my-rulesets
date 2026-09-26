@@ -1,31 +1,24 @@
 // ============================================================
-// my-rulesets 覆写脚本（双端兼容）
+// my-rulesets 覆写脚本（FlClash / Clash Verge Rev / Mihomo）
 // ------------------------------------------------------------
-// 将机场订阅配置改造为「my-rulesets」规格：保留订阅节点，
-// 重建策略组（国家分组 + url-test 自动 + 应用组 + Direct/Final），
-// 注入 rule-providers（引用 my-rulesets 的 clash/ 规则集）并重写 rules。
+// 规格：
+//   - 保留订阅节点
+//   - 自建 VPS 节点（当前：DMIT | ...）独立于国家分组
+//   - DMIT 自建组：🛠 DMIT自建 -> 🛠 DMIT自建-自动 -> 具体协议节点
+//   - 动态国家分组：>=2 节点建组，否则并入 🌍 其他地区
+//   - 应用组 + Direct/Final + 32 个 rule-providers
 //
-// 适配端：
-//   - FlClash（安卓）：配置 → 覆写 → 脚本模式，从 URL 直接导入本文件
-//   - Clash Verge Rev（Windows）：订阅右键 → 新建脚本 profile → 编辑文件 → 粘贴本文件
-//
-// 入口签名 function main(config, profileName)：
-//   - FlClash 只传 config，profileName 为 undefined，不影响运行
-//   - Clash Verge 会传 config, profileName，可利用 profileName 区分多订阅
-//
-// 注意：Clash Verge 的脚本 profile 不支持从 URL 直接拉取脚本，
-// 只能本地文件（粘贴或 curl 同步），详见 OVERWRITE.md。
+// 安全：公开仓库仅识别节点命名，不包含任何 VPS IP/PSK/密码。
 // ============================================================
 function main(config, profileName) {
-  // ============ 1. 保留订阅节点 ============
   const nodes = config.proxies || [];
 
-  // ============ 2. 定义策略组 ============
+  const PSEUDO_NODE_RE = /Traffic|Expire|流量|到期|剩余|套餐|官网|订阅|^Panel|^www\.|creamdata\.xyz|节点|主页/i;
+  const DMIT_NODE_RE = /^DMIT\s*\|/i;
+  const DMIT_GROUP = '🛠 DMIT自建';
+  const DMIT_AUTO = '🛠 DMIT自建-自动';
+  const TEST_URL = 'http://www.gstatic.com/generate_204';
 
-  // 按国家归类节点（从节点名识别国家）
-  // 完整国家映射：emoji / 国家代码 / 中文名 均可识别
-  // ⚠️ 国家代码须加非字母边界 (?:^|[^A-Za-z])XX(?:[^A-Za-z]|$)（与 openclash_overwrite.sh 一致）：
-  //   裸 "US"/"ID"/"IN" 会误命中 Status/Provider/Valid 等英文词 → 误归类/误建组
   const countryPatterns = {
     '🇭🇰 香港': /香港|🇭🇰|(?:^|[^A-Za-z])HK(?:[^A-Za-z]|$)|Hong\s?Kong/i,
     '🇸🇬 新加坡': /新加坡|🇸🇬|(?:^|[^A-Za-z])SG(?:[^A-Za-z]|$)|Singapore/i,
@@ -76,20 +69,24 @@ function main(config, profileName) {
     '🇵🇪 秘鲁': /秘鲁|🇵🇪|(?:^|[^A-Za-z])PE(?:[^A-Za-z]|$)|Peru/i
   };
 
-  // 归类节点（跳过 Traffic/Expire 显示节点）
+  const dmitNodes = [];
   const countryNodes = { '🌍 其他地区': [] };
-  for (const [country] of Object.entries(countryPatterns)) countryNodes[country] = [];
+  Object.keys(countryPatterns).forEach(country => { countryNodes[country] = []; });
+
   for (const node of nodes) {
-    // 伪节点过滤（与 openclash_overwrite.sh 对齐）：流量/到期/套餐/官网/面板等显示节点不进组
-    if (/Traffic|Expire|流量|到期|剩余|套餐|官网|订阅|^Panel|^www\.|creamdata\.xyz|节点|主页/i.test(node.name)) continue;
+    const name = node && node.name;
+    if (!name || PSEUDO_NODE_RE.test(name)) continue;
+    if (DMIT_NODE_RE.test(name)) {
+      dmitNodes.push(name);
+      continue;
+    }
     let matched = '🌍 其他地区';
     for (const [country, regex] of Object.entries(countryPatterns)) {
-      if (regex.test(node.name)) { matched = country; break; }
+      if (regex.test(name)) { matched = country; break; }
     }
-    countryNodes[matched].push(node.name);
+    countryNodes[matched].push(name);
   }
 
-  // 动态国家分组：任一国家节点 ≥2 就建独立分组，否则并入 🌍 其他地区
   for (const [country, list] of Object.entries(countryNodes)) {
     if (country === '🌍 其他地区') continue;
     if (list.length < 2) {
@@ -97,71 +94,63 @@ function main(config, profileName) {
       delete countryNodes[country];
     }
   }
-  // 国家分组顺序：节点多的在前；🌍 其他地区放最后
-  // ⚠️ 「其他地区」仅在有成员时才加入引用（与 openclash_overwrite.sh 一致）：
-  //   否则所有节点都命中国家时，Proxies/应用组会引用不存在的空组 → mihomo fatal 启动失败
-  const groupNames = Object.keys(countryNodes)
+
+  const countryGroupNames = Object.keys(countryNodes)
     .filter(c => c !== '🌍 其他地区')
     .sort((a, b) => countryNodes[b].length - countryNodes[a].length);
   if (countryNodes['🌍 其他地区'].length > 0) {
-    groupNames.push('🌍 其他地区');
+    countryGroupNames.push('🌍 其他地区');
   } else {
     delete countryNodes['🌍 其他地区'];
   }
 
-  // 构建策略组（顺序：Proxies → 应用组 → Direct → Final → 国家分组）
+  const hasDMIT = dmitNodes.length > 0;
+  const routeGroups = (hasDMIT ? [DMIT_GROUP] : []).concat(countryGroupNames);
   const groups = [];
 
-  // 顶层节点选择组（引用国家分组）
-  groups.push({
-    name: 'Proxies', type: 'select',
-    proxies: groupNames
-  });
+  groups.push({ name: 'Proxies', type: 'select', proxies: routeGroups });
 
-  // 应用策略组（引用国家分组）
-  // 应用组顺序与 openclash_overwrite.sh / convert.py 严格一致：AI 在首位
   const appGroups = [
     'AI', 'Netflix', 'HBO', 'DisneyPlus', 'YouTube', 'Bahamut', 'Bilibili',
     'MyTVSuper', 'Telegram', 'Crypto', 'Steam', 'Epic', 'Xbox',
     'PlayStation', 'Microsoft', 'Scholar', 'Apple', 'Google', 'Tiktok'
   ];
   for (const app of appGroups) {
-    groups.push({
-      name: app, type: 'select',
-      proxies: ['Proxies', '🎯Direct'].concat(groupNames)
-    });
+    let members;
+    if (app === 'AI' && hasDMIT) {
+      members = [DMIT_GROUP, 'Proxies', '🎯Direct'].concat(countryGroupNames);
+    } else {
+      members = ['Proxies', '🎯Direct'].concat(hasDMIT ? [DMIT_GROUP] : []).concat(countryGroupNames);
+    }
+    groups.push({ name: app, type: 'select', proxies: members });
   }
-  
-  // 直连组
+
   groups.push({ name: '🎯Direct', type: 'select', proxies: ['DIRECT', 'Proxies'] });
-  
-  // Final 兜底
   groups.push({
     name: '✈️Final', type: 'select',
-    proxies: ['Proxies', '🎯Direct'].concat(groupNames)
+    proxies: ['Proxies', '🎯Direct'].concat(hasDMIT ? [DMIT_GROUP] : []).concat(countryGroupNames)
   });
 
-  // 国家分组（放 Final 之后，与 OpenClash 规格一致）
-  for (const country of groupNames) {
-    const nodeList = countryNodes[country] || [];
-    if (nodeList.length === 0) continue;
+  // 自建 VPS 组放在 Final 后、国家分组前；客户端 UI 与现有国家组逻辑一致。
+  if (hasDMIT) {
+    groups.push({ name: DMIT_GROUP, type: 'select', proxies: [DMIT_AUTO].concat(dmitNodes) });
     groups.push({
-      name: country, type: 'select',
-      proxies: [`${country}-自动`].concat(nodeList)
-    });
-    groups.push({
-      name: `${country}-自动`, type: 'url-test',
-      url: 'http://www.gstatic.com/generate_204',
-      interval: 300, tolerance: 50,
-      proxies: nodeList
+      name: DMIT_AUTO, type: 'url-test', proxies: dmitNodes,
+      url: TEST_URL, interval: 300, tolerance: 50
     });
   }
 
-  // ============ 3. 注入 rule-providers（引用 GitHub 规则集）============
-  const ruleProviders = {};
+  for (const country of countryGroupNames) {
+    const nodeList = countryNodes[country] || [];
+    if (!nodeList.length) continue;
+    groups.push({ name: country, type: 'select', proxies: [`${country}-自动`].concat(nodeList) });
+    groups.push({
+      name: `${country}-自动`, type: 'url-test', proxies: nodeList,
+      url: TEST_URL, interval: 300, tolerance: 50
+    });
+  }
 
-  // 规则集地址源。默认 raw.githubusercontent.com；若下载失败/被墙，
-  // 改用 jsdelivr CDN：'https://testingcf.jsdelivr.net/gh/xmzzzw/my-rulesets@main/clash/'
+  const ruleProviders = {};
   const ruleSetUrl = 'https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/clash/';
   const ruleSets = [
     ['nexitallyy_Extra_CN_3.list', '🎯Direct'],
@@ -197,30 +186,25 @@ function main(config, profileName) {
     ['naiixi_Extra_CN_2.list', '🎯Direct'],
     ['blackmatrix7_WeChat.list', '🎯Direct']
   ];
-  
-  const rules = [];
-  // 内部流量/规则集下载直连放【最前】（与 openclash_overwrite.sh / convert.py 一致），
-  // 避免 mihomo 拉 rule-provider 时命中 MATCH 走代理导致 EOF 死循环（OpenClash 踩坑）
-  rules.push('DOMAIN-SUFFIX,jsdelivr.net,🎯Direct');
-  rules.push('DOMAIN-SUFFIX,githubusercontent.com,🎯Direct');
-  rules.push('DOMAIN-SUFFIX,github.com,🎯Direct');
-  rules.push('DOMAIN-SUFFIX,raw.githubusercontent.com,🎯Direct');
-  rules.push('DOMAIN-SUFFIX,creamdata.xyz,🎯Direct');
+
+  const rules = [
+    'DOMAIN-SUFFIX,jsdelivr.net,🎯Direct',
+    'DOMAIN-SUFFIX,githubusercontent.com,🎯Direct',
+    'DOMAIN-SUFFIX,github.com,🎯Direct',
+    'DOMAIN-SUFFIX,raw.githubusercontent.com,🎯Direct',
+    'DOMAIN-SUFFIX,creamdata.xyz,🎯Direct'
+  ];
   ruleSets.forEach(([file, policy], idx) => {
     const providerName = `provider_${idx}`;
     ruleProviders[providerName] = {
       type: 'http', behavior: 'classical', format: 'text',
-      url: ruleSetUrl + file,
-      path: `./providers/${file}`, interval: 86400
+      url: ruleSetUrl + file, path: `./providers/${file}`, interval: 86400
     };
     rules.push(`RULE-SET,${providerName},${policy}`);
   });
-
-  // GEOIP + MATCH
   rules.push('GEOIP,CN,🎯Direct,no-resolve');
   rules.push('MATCH,✈️Final');
 
-  // ============ 4. 组装并返回 ============
   config.proxies = nodes;
   config['proxy-groups'] = groups;
   config['rule-providers'] = ruleProviders;
