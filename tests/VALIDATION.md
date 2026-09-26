@@ -1,1 +1,0 @@
-Validation for self-hosted DMIT policy changes is covered by `test_self_hosted_policy.py` and `test_self_hosted_overwrite.js`; OpenClash additionally requires shell syntax validation and real-device preflight before deployment.
