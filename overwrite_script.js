@@ -1,22 +1,28 @@
 // ============================================================
 // my-rulesets 覆写脚本（FlClash / Clash Verge Rev / Mihomo）
 // ------------------------------------------------------------
-// 规格：
-//   - 保留订阅节点
-//   - 自建 VPS 节点（当前：DMIT | ...）独立于国家分组
-//   - DMIT 自建组：🛠 DMIT自建 -> 🛠 DMIT自建-自动 -> 具体协议节点
-//   - 动态国家分组：>=2 节点建组，否则并入 🌍 其他地区
-//   - 应用组 + Direct/Final + 32 个 rule-providers
+// 前端可见策略（Self-hosted V2）：
+//   Proxies / 应用组 / Direct / Final
+//   🏠 自建节点
+//   🏠 自建节点-自动
+//   🖥 <Provider> · <Machine-ID>
+//   🖥 <Provider> · <Machine-ID>-自动
+//   国家分组 + 各 -自动
 //
-// 安全：公开仓库仅识别节点命名，不包含任何 VPS IP/PSK/密码。
+// 自建节点命名：<Provider> | <Machine-ID> | <Protocol>
+// 例：DMIT | LAX-01 | Snell、Lisa | LAX-01 | HY2
+// Provider / Machine-ID 只允许 ASCII 字母数字 . _ -；Protocol 必须在支持清单中。
+// 自建节点不参与国家归类，也不会进入「🌍 其他地区」。
+// 顶层/机器自动组都直接测试真实协议节点，不嵌套自动组。
 // ============================================================
 function main(config, profileName) {
   const nodes = config.proxies || [];
 
   const PSEUDO_NODE_RE = /Traffic|Expire|流量|到期|剩余|套餐|官网|订阅|^Panel|^www\.|creamdata\.xyz|节点|主页/i;
-  const DMIT_NODE_RE = /^DMIT\s*\|/i;
-  const DMIT_GROUP = '🛠 DMIT自建';
-  const DMIT_AUTO = '🛠 DMIT自建-自动';
+  const SELF_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+  const SELF_PROTOCOL_RE = /^(?:ss|ssr|trojan|anytls|vmess|vless|hysteria2|hysteria|hy2|tuic|wireguard|snell|http|socks5)(?:\s|$)/i;
+  const SELF_GROUP = '🏠 自建节点';
+  const SELF_AUTO = '🏠 自建节点-自动';
   const TEST_URL = 'http://www.gstatic.com/generate_204';
 
   const countryPatterns = {
@@ -69,17 +75,48 @@ function main(config, profileName) {
     '🇵🇪 秘鲁': /秘鲁|🇵🇪|(?:^|[^A-Za-z])PE(?:[^A-Za-z]|$)|Peru/i
   };
 
-  const dmitNodes = [];
+  function parseSelfHostedName(name) {
+    if (typeof name !== 'string') return null;
+    const parts = name.split('|').map(part => part.trim());
+    if (parts.length !== 3) return null;
+    const [provider, machine, protocol] = parts;
+    if (!SELF_ID_RE.test(provider) || !SELF_ID_RE.test(machine) || !SELF_PROTOCOL_RE.test(protocol)) return null;
+    return {
+      provider,
+      machine,
+      protocol,
+      node: name,
+      groupName: `🖥 ${provider} · ${machine}`,
+      autoName: `🖥 ${provider} · ${machine}-自动`
+    };
+  }
+
+  const selfHostedNodes = [];
+  const machineMap = new Map();
   const countryNodes = { '🌍 其他地区': [] };
   Object.keys(countryPatterns).forEach(country => { countryNodes[country] = []; });
 
   for (const node of nodes) {
     const name = node && node.name;
     if (!name || PSEUDO_NODE_RE.test(name)) continue;
-    if (DMIT_NODE_RE.test(name)) {
-      dmitNodes.push(name);
+
+    const self = parseSelfHostedName(name);
+    if (self) {
+      selfHostedNodes.push(name);
+      const key = `${self.provider}|${self.machine}`;
+      if (!machineMap.has(key)) {
+        machineMap.set(key, {
+          provider: self.provider,
+          machine: self.machine,
+          groupName: self.groupName,
+          autoName: self.autoName,
+          nodes: []
+        });
+      }
+      machineMap.get(key).nodes.push(name);
       continue;
     }
+
     let matched = '🌍 其他地区';
     for (const [country, regex] of Object.entries(countryPatterns)) {
       if (regex.test(name)) { matched = country; break; }
@@ -87,6 +124,7 @@ function main(config, profileName) {
     countryNodes[matched].push(name);
   }
 
+  // 任一国家 >=2 节点时建立独立国家组；单节点国家并入「其他地区」。
   for (const [country, list] of Object.entries(countryNodes)) {
     if (country === '🌍 其他地区') continue;
     if (list.length < 2) {
@@ -96,16 +134,18 @@ function main(config, profileName) {
   }
 
   const countryGroupNames = Object.keys(countryNodes)
-    .filter(c => c !== '🌍 其他地区')
+    .filter(country => country !== '🌍 其他地区')
     .sort((a, b) => countryNodes[b].length - countryNodes[a].length);
+
   if (countryNodes['🌍 其他地区'].length > 0) {
     countryGroupNames.push('🌍 其他地区');
   } else {
     delete countryNodes['🌍 其他地区'];
   }
 
-  const hasDMIT = dmitNodes.length > 0;
-  const routeGroups = (hasDMIT ? [DMIT_GROUP] : []).concat(countryGroupNames);
+  const machines = Array.from(machineMap.values());
+  const hasSelfHosted = selfHostedNodes.length > 0;
+  const routeGroups = (hasSelfHosted ? [SELF_GROUP] : []).concat(countryGroupNames);
   const groups = [];
 
   groups.push({ name: 'Proxies', type: 'select', proxies: routeGroups });
@@ -115,29 +155,56 @@ function main(config, profileName) {
     'MyTVSuper', 'Telegram', 'Crypto', 'Steam', 'Epic', 'Xbox',
     'PlayStation', 'Microsoft', 'Scholar', 'Apple', 'Google', 'Tiktok'
   ];
+
   for (const app of appGroups) {
     let members;
-    if (app === 'AI' && hasDMIT) {
-      members = [DMIT_GROUP, 'Proxies', '🎯Direct'].concat(countryGroupNames);
+    if (app === 'AI' && hasSelfHosted) {
+      members = [SELF_GROUP, 'Proxies', '🎯Direct'].concat(countryGroupNames);
     } else {
-      members = ['Proxies', '🎯Direct'].concat(hasDMIT ? [DMIT_GROUP] : []).concat(countryGroupNames);
+      members = ['Proxies', '🎯Direct'].concat(hasSelfHosted ? [SELF_GROUP] : []).concat(countryGroupNames);
     }
     groups.push({ name: app, type: 'select', proxies: members });
   }
 
   groups.push({ name: '🎯Direct', type: 'select', proxies: ['DIRECT', 'Proxies'] });
   groups.push({
-    name: '✈️Final', type: 'select',
-    proxies: ['Proxies', '🎯Direct'].concat(hasDMIT ? [DMIT_GROUP] : []).concat(countryGroupNames)
+    name: '✈️Final',
+    type: 'select',
+    proxies: ['Proxies', '🎯Direct'].concat(hasSelfHosted ? [SELF_GROUP] : []).concat(countryGroupNames)
   });
 
-  // 自建 VPS 组放在 Final 后、国家分组前；客户端 UI 与现有国家组逻辑一致。
-  if (hasDMIT) {
-    groups.push({ name: DMIT_GROUP, type: 'select', proxies: [DMIT_AUTO].concat(dmitNodes) });
+  // Self-hosted V2：只暴露「总组 + 机器组」，Provider 不单独占一层。
+  if (hasSelfHosted) {
+    const machineGroupNames = machines.map(machine => machine.groupName);
     groups.push({
-      name: DMIT_AUTO, type: 'url-test', proxies: dmitNodes,
-      url: TEST_URL, interval: 300, tolerance: 50
+      name: SELF_GROUP,
+      type: 'select',
+      proxies: [SELF_AUTO].concat(machineGroupNames)
     });
+    groups.push({
+      name: SELF_AUTO,
+      type: 'url-test',
+      proxies: selfHostedNodes,
+      url: TEST_URL,
+      interval: 300,
+      tolerance: 50
+    });
+
+    for (const machine of machines) {
+      groups.push({
+        name: machine.groupName,
+        type: 'select',
+        proxies: [machine.autoName].concat(machine.nodes)
+      });
+      groups.push({
+        name: machine.autoName,
+        type: 'url-test',
+        proxies: machine.nodes,
+        url: TEST_URL,
+        interval: 300,
+        tolerance: 50
+      });
+    }
   }
 
   for (const country of countryGroupNames) {
@@ -145,8 +212,12 @@ function main(config, profileName) {
     if (!nodeList.length) continue;
     groups.push({ name: country, type: 'select', proxies: [`${country}-自动`].concat(nodeList) });
     groups.push({
-      name: `${country}-自动`, type: 'url-test', proxies: nodeList,
-      url: TEST_URL, interval: 300, tolerance: 50
+      name: `${country}-自动`,
+      type: 'url-test',
+      proxies: nodeList,
+      url: TEST_URL,
+      interval: 300,
+      tolerance: 50
     });
   }
 
@@ -194,14 +265,20 @@ function main(config, profileName) {
     'DOMAIN-SUFFIX,raw.githubusercontent.com,🎯Direct',
     'DOMAIN-SUFFIX,creamdata.xyz,🎯Direct'
   ];
+
   ruleSets.forEach(([file, policy], idx) => {
     const providerName = `provider_${idx}`;
     ruleProviders[providerName] = {
-      type: 'http', behavior: 'classical', format: 'text',
-      url: ruleSetUrl + file, path: `./providers/${file}`, interval: 86400
+      type: 'http',
+      behavior: 'classical',
+      format: 'text',
+      url: ruleSetUrl + file,
+      path: `./providers/${file}`,
+      interval: 86400
     };
     rules.push(`RULE-SET,${providerName},${policy}`);
   });
+
   rules.push('GEOIP,CN,🎯Direct,no-resolve');
   rules.push('MATCH,✈️Final');
 
