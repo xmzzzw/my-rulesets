@@ -1,22 +1,18 @@
 #!/bin/sh
 # ============================================================
-# OpenClash 覆写脚本 — my-rulesets 完整规格
+# OpenClash 覆写脚本 — my-rulesets Self-hosted V2
 # ============================================================
-# 规格：
-#   - 保留订阅 proxies
-#   - 自建 VPS 节点以命名约定识别：^DMIT[space]*\|
-#   - DMIT 节点不参与国家归类，也不会进入「🌍 其他地区」
-#   - 🛠 DMIT自建 = select(自动 + 具体协议节点)
-#   - 🛠 DMIT自建-自动 = url-test(具体协议节点)
-#   - 动态国家分组：任一国家 >=2 节点建组；<=1 并入 🌍 其他地区
-#   - 20 应用策略组 + Proxies + 🎯Direct + ✈️Final
-#   - 32 个 rule-providers + 5 条内部直连 + GEOIP + MATCH
+# 自建节点命名：<Provider> | <Machine-ID> | <Protocol>
+# 例：DMIT | LAX-01 | Snell；Lisa | LAX-01 | HY2
 #
-# UI 顺序：
-#   Proxies → 应用组 → 🎯Direct → ✈️Final → DMIT自建(+自动)
-#   → 国家分组(+自动) → 🌍 其他地区(+自动)
+# 前端顺序：
+#   Proxies → 应用组 → 🎯Direct → ✈️Final
+#   → 🏠 自建节点 / 🏠 自建节点-自动
+#   → 🖥 Provider · Machine / 对应 -自动
+#   → 国家分组 / 对应 -自动
 #
-# 安全：公开仓库只包含命名/分组逻辑，不包含任何 VPS IP、PSK 或密码。
+# 自建顶层自动组与机器自动组都直接引用真实协议节点，不嵌套 url-test。
+# 自建节点从国家统计中排除，不进入 🌍 其他地区。
 # ============================================================
 . /usr/share/openclash/ruby.sh
 . /usr/share/openclash/log.sh
@@ -75,10 +71,12 @@ EOF_RPS
 RPS=$(echo "$RPS" | sed "s|REPL_RB|${RULE_BASE}|g; s|REPL_RP|${RULE_PATH}|g")
 ruby_merge_hash "$CONFIG_FILE" "['rule-providers']" "$RPS"
 
-# ============ 2. 提取节点并分离自建节点 ============
+# ============ 2. 提取节点并识别 Self-hosted ============
 NODE_NAMES_FILE=$(mktemp)
 NORMAL_NODES_FILE=$(mktemp)
-DMIT_NODES_FILE=$(mktemp)
+SELF_INDEX_FILE=$(mktemp)
+SELF_NODES_FILE=$(mktemp)
+SELF_MACHINES_FILE=$(mktemp)
 ACTIVE_COUNTRIES_FILE=$(mktemp)
 OTHER_NODES_FILE=$(mktemp)
 
@@ -93,8 +91,36 @@ ruby -ryaml -rYAML -I "/usr/share/openclash" -E UTF-8 -e '
   | grep -viE 'Traffic|Expire|流量|到期|剩余|套餐|官网|订阅|^Panel|^www\.|creamdata\.xyz|节点|主页' \
   > "$NODE_NAMES_FILE"
 
-grep -iE '^DMIT[[:space:]]*\|' "$NODE_NAMES_FILE" > "$DMIT_NODES_FILE" || true
-grep -viE '^DMIT[[:space:]]*\|' "$NODE_NAMES_FILE" > "$NORMAL_NODES_FILE" || true
+# 命名合同：
+#   <Provider> | <Machine-ID> | <Protocol>
+# Provider / Machine-ID: ASCII 字母数字 . _ -
+# Protocol: 支持清单中的标签（Snell/HY2/Hysteria2/AnyTLS/TUIC/...）
+while IFS= read -r node; do
+  [ -z "$node" ] && continue
+  parsed=$(printf '%s\n' "$node" | awk -F'|' '
+    NF == 3 {
+      provider=$1; machine=$2; proto=$3
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", provider)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", machine)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", proto)
+      split(proto, parts, /[[:space:]]+/)
+      p=tolower(parts[1])
+      if (provider ~ /^[A-Za-z0-9][A-Za-z0-9._-]*$/ &&
+          machine ~ /^[A-Za-z0-9][A-Za-z0-9._-]*$/ &&
+          p ~ /^(ss|ssr|trojan|anytls|vmess|vless|hysteria2|hysteria|hy2|tuic|wireguard|snell|http|socks5)$/) {
+        printf "%s\t%s\t%s\n", provider, machine, $0
+      }
+    }
+  ')
+  if [ -n "$parsed" ]; then
+    printf '%s\n' "$parsed" >> "$SELF_INDEX_FILE"
+    printf '%s\n' "$node" >> "$SELF_NODES_FILE"
+  else
+    printf '%s\n' "$node" >> "$NORMAL_NODES_FILE"
+  fi
+done < "$NODE_NAMES_FILE"
+
+awk -F '\t' '!seen[$1 FS $2]++ { print $1 "\t" $2 }' "$SELF_INDEX_FILE" > "$SELF_MACHINES_FILE"
 
 # ============ 3. 国家识别表 ============
 cat > /tmp/myrules_country_table << 'EOF_COUNTRY'
@@ -147,7 +173,7 @@ cat > /tmp/myrules_country_table << 'EOF_COUNTRY'
 🇵🇪 秘鲁@(秘鲁|🇵🇪|[^A-Za-z]PE[^A-Za-z]|Peru)
 EOF_COUNTRY
 
-# ============ 4. 计算独立国家（仅普通机场节点） ============
+# ============ 4. 计算独立国家（仅机场节点） ============
 while IFS='@' read -r name regex; do
   [ -z "$name" ] && continue
   cnt=$(grep -icE "$regex" "$NORMAL_NODES_FILE" || true)
@@ -155,7 +181,6 @@ while IFS='@' read -r name regex; do
 done < /tmp/myrules_country_table \
   | sort -t'@' -k1,1 -rn > "$ACTIVE_COUNTRIES_FILE"
 
-# 未进入独立国家组的普通节点归入「其他地区」。
 while IFS= read -r node; do
   [ -z "$node" ] && continue
   matched=0
@@ -169,18 +194,41 @@ while IFS= read -r node; do
   [ "$matched" = "0" ] && printf '%s\n' "$node" >> "$OTHER_NODES_FILE"
 done < "$NORMAL_NODES_FILE"
 
-# ============ 5. 生成 DMIT / 国家 / 其他地区组 ============
-DMIT_GROUPS=""
-DMIT_TOP_REF=""
-DMIT_APP_REF=""
+# ============ 5. 生成 Self-hosted / 国家 / 其他地区组 ============
+SELF_GROUPS=""
+SELF_TOP_REF=""
+SELF_APP_REF=""
 AI_PREFIX=""
-if [ -s "$DMIT_NODES_FILE" ]; then
-  DMIT_REFS=$(ruby_escape_file "$DMIT_NODES_FILE" | tr -d '\n')
-  DMIT_REFS="${DMIT_REFS%,}"
-  DMIT_GROUPS="{\"name\"=>\"🛠 DMIT自建\",\"type\"=>\"select\",\"proxies\"=>[\"🛠 DMIT自建-自动\",${DMIT_REFS}]},{\"name\"=>\"🛠 DMIT自建-自动\",\"type\"=>\"url-test\",\"proxies\"=>[${DMIT_REFS}],\"url\"=>\"${TEST_URL}\",\"interval\"=>300,\"tolerance\"=>50},"
-  DMIT_TOP_REF='"🛠 DMIT自建",'
-  DMIT_APP_REF='"🛠 DMIT自建",'
-  AI_PREFIX='"🛠 DMIT自建",'
+
+if [ -s "$SELF_NODES_FILE" ]; then
+  SELF_REFS=$(ruby_escape_file "$SELF_NODES_FILE" | tr -d '\n')
+  SELF_REFS="${SELF_REFS%,}"
+
+  MACHINE_GROUP_REFS=""
+  while IFS="$(printf '\t')" read -r provider machine; do
+    [ -z "$provider" ] && continue
+    group="🖥 ${provider} · ${machine}"
+    auto="${group}-自动"
+    MACHINE_GROUP_REFS="${MACHINE_GROUP_REFS}\"${group}\","
+
+    MACHINE_NODE_FILE=$(mktemp)
+    awk -F '\t' -v p="$provider" -v m="$machine" '$1 == p && $2 == m { print $3 }' "$SELF_INDEX_FILE" > "$MACHINE_NODE_FILE"
+    MACHINE_NODE_REFS=$(ruby_escape_file "$MACHINE_NODE_FILE" | tr -d '\n')
+    MACHINE_NODE_REFS="${MACHINE_NODE_REFS%,}"
+    rm -f "$MACHINE_NODE_FILE"
+
+    SELF_GROUPS="${SELF_GROUPS}{\"name\"=>\"${group}\",\"type\"=>\"select\",\"proxies\"=>[\"${auto}\",${MACHINE_NODE_REFS}]},"
+    SELF_GROUPS="${SELF_GROUPS}{\"name\"=>\"${auto}\",\"type\"=>\"url-test\",\"proxies\"=>[${MACHINE_NODE_REFS}],\"url\"=>\"${TEST_URL}\",\"interval\"=>300,\"tolerance\"=>50},"
+  done < "$SELF_MACHINES_FILE"
+
+  MACHINE_GROUP_REFS="${MACHINE_GROUP_REFS%,}"
+  SELF_HEAD="{\"name\"=>\"🏠 自建节点\",\"type\"=>\"select\",\"proxies\"=>[\"🏠 自建节点-自动\",${MACHINE_GROUP_REFS}]},"
+  SELF_HEAD="${SELF_HEAD}{\"name\"=>\"🏠 自建节点-自动\",\"type\"=>\"url-test\",\"proxies\"=>[${SELF_REFS}],\"url\"=>\"${TEST_URL}\",\"interval\"=>300,\"tolerance\"=>50},"
+  SELF_GROUPS="${SELF_HEAD}${SELF_GROUPS}"
+
+  SELF_TOP_REF='"🏠 自建节点",'
+  SELF_APP_REF='"🏠 自建节点",'
+  AI_PREFIX='"🏠 自建节点",'
 fi
 
 COUNTRY_REFS=""
@@ -193,8 +241,10 @@ while IFS='@' read -r cnt name regex; do
   NODE_REFS="${NODE_REFS%,}"
   rm -f "$COUNTRY_FILE"
   [ -z "$NODE_REFS" ] && continue
+
   COUNTRY_REFS="${COUNTRY_REFS}\"${name}\","
-  COUNTRY_GROUPS="${COUNTRY_GROUPS}{\"name\"=>\"${name}\",\"type\"=>\"select\",\"proxies\"=>[\"${name}-自动\",${NODE_REFS}]},{\"name\"=>\"${name}-自动\",\"type\"=>\"url-test\",\"proxies\"=>[${NODE_REFS}],\"url\"=>\"${TEST_URL}\",\"interval\"=>300,\"tolerance\"=>50},"
+  COUNTRY_GROUPS="${COUNTRY_GROUPS}{\"name\"=>\"${name}\",\"type\"=>\"select\",\"proxies\"=>[\"${name}-自动\",${NODE_REFS}]},"
+  COUNTRY_GROUPS="${COUNTRY_GROUPS}{\"name\"=>\"${name}-自动\",\"type\"=>\"url-test\",\"proxies\"=>[${NODE_REFS}],\"url\"=>\"${TEST_URL}\",\"interval\"=>300,\"tolerance\"=>50},"
 done < "$ACTIVE_COUNTRIES_FILE"
 
 OTHER_GROUPS=""
@@ -202,11 +252,12 @@ if [ -s "$OTHER_NODES_FILE" ]; then
   OTHER_REFS=$(ruby_escape_file "$OTHER_NODES_FILE" | tr -d '\n')
   OTHER_REFS="${OTHER_REFS%,}"
   COUNTRY_REFS="${COUNTRY_REFS}\"🌍 其他地区\","
-  OTHER_GROUPS="{\"name\"=>\"🌍 其他地区\",\"type\"=>\"select\",\"proxies\"=>[\"🌍 其他地区-自动\",${OTHER_REFS}]},{\"name\"=>\"🌍 其他地区-自动\",\"type\"=>\"url-test\",\"proxies\"=>[${OTHER_REFS}],\"url\"=>\"${TEST_URL}\",\"interval\"=>300,\"tolerance\"=>50},"
+  OTHER_GROUPS="{\"name\"=>\"🌍 其他地区\",\"type\"=>\"select\",\"proxies\"=>[\"🌍 其他地区-自动\",${OTHER_REFS}]},"
+  OTHER_GROUPS="${OTHER_GROUPS}{\"name\"=>\"🌍 其他地区-自动\",\"type\"=>\"url-test\",\"proxies\"=>[${OTHER_REFS}],\"url\"=>\"${TEST_URL}\",\"interval\"=>300,\"tolerance\"=>50},"
 fi
 
-TOP_REFS="${DMIT_TOP_REF}${COUNTRY_REFS}"
-APP_REFS="${DMIT_APP_REF}${COUNTRY_REFS}"
+TOP_REFS="${SELF_TOP_REF}${COUNTRY_REFS}"
+APP_REFS="${SELF_APP_REF}${COUNTRY_REFS}"
 
 # ============ 6. 组装 proxy-groups ============
 GROUPS=$(cat << EOF_GROUPS | oneliner
@@ -233,7 +284,7 @@ GROUPS=$(cat << EOF_GROUPS | oneliner
 {"name"=>"Tiktok","type"=>"select","proxies"=>["Proxies","🎯Direct",${APP_REFS}]},
 {"name"=>"🎯Direct","type"=>"select","proxies"=>["DIRECT","Proxies"]},
 {"name"=>"✈️Final","type"=>"select","proxies"=>["Proxies","🎯Direct",${APP_REFS}]},
-${DMIT_GROUPS}${COUNTRY_GROUPS}${OTHER_GROUPS}
+${SELF_GROUPS}${COUNTRY_GROUPS}${OTHER_GROUPS}
 ]
 EOF_GROUPS
 )
@@ -286,6 +337,8 @@ EOF_RULES
 )
 ruby_edit "$CONFIG_FILE" "['rules']" "$RULES"
 
-rm -f "$NODE_NAMES_FILE" "$NORMAL_NODES_FILE" "$DMIT_NODES_FILE" "$ACTIVE_COUNTRIES_FILE" "$OTHER_NODES_FILE" /tmp/myrules_country_table
+rm -f "$NODE_NAMES_FILE" "$NORMAL_NODES_FILE" "$SELF_INDEX_FILE" "$SELF_NODES_FILE" \
+      "$SELF_MACHINES_FILE" "$ACTIVE_COUNTRIES_FILE" "$OTHER_NODES_FILE" \
+      /tmp/myrules_country_table
 LOG_TIP "MyRules Custom Overwrite Complete."
 exit 0
