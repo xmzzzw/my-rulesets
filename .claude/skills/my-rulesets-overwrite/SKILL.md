@@ -1,179 +1,207 @@
 ---
 name: my-rulesets-overwrite
-description: 各 Clash 系客户端及主流代理软件的「机场订阅覆写」方法集锦。当用户要求"给 XX 客户端写覆写脚本""Clash Verge 怎么覆写""FlClash 覆写方法""OpenClash 覆写踩坑""把订阅换成自己的分流规则"时使用。含 OpenClash 两个致命坑（单行片段机制 / rule-provider 下载 EOF 死循环）与广播 IP 判定。
+description: 维护 my-rulesets 的 FlClash/Clash Verge/Mihomo/OpenClash 覆写逻辑，包括 Self-hosted V2（🏠 自建节点、🖥 Provider · Machine）、动态国家分组、AI 分流、OpenClash 单行 Ruby 片段与 rule-provider EOF 排障。用户要求修改覆写、加入 VPS、多机器分组或排查 OpenClash 时使用。
 ---
 
-# my-rulesets 覆写方法（各客户端）
+# my-rulesets overwrite skill
 
-把机场订阅改造成「my-rulesets 规格」的覆写方法，覆盖 Clash 系全家桶 + 其他主流代理软件。
+## 唯一策略合同
 
-## 何时使用
+先读：
 
-- 用户要求给某个客户端写覆写 / 改分流规则
-- "Clash Verge 怎么覆写" / "FlClash 覆写" / "OpenClash 覆写"
-- 换机场后让各端自动套用 my-rulesets 规格
-- OpenClash 覆写不生效 / 节点全红排查
-
-## 覆写链接（my-rulesets GitHub 仓库）
-
-- 仓库：`https://github.com/xmzzzw/my-rulesets`
-- **FlClash / Clash Verge JS 脚本**：`https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/overwrite_script.js`
-- **OpenClash Ruby 覆写脚本**：`https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/openclash_overwrite.sh`
-- **Clash 规则集**：`https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/clash/<规则集>.list`
-- **Surge 规则集**：`https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/<规则集>.list`
-- 教程文档：`https://github.com/xmzzzw/my-rulesets/blob/main/OVERWRITE.md`
-
-## 覆写本质
-
-各客户端「订阅拉节点 + 覆写注入分流」的统一思想：
-1. **保留订阅的 proxies（节点）**
-2. **重建 proxy-groups**（顺序严格：Proxies → 应用组 → 🎯Direct → ✈️Final → 国家分组 + 各 -自动）
-   - **国家分组必须放 Final 后面**（与 overwrite_script.js / openclash_overwrite.sh / convert.py 一致）
-   - **国家分组动态生成：任一国家节点 ≥2 即建独立分组**（select + url-test 自动），≤1 节点并入 🌍 其他地区
-   - 不限于固定 6/10 国：法国/俄罗斯/荷兰等 ≥2 节点也建组（overwrite_script.js 与 openclash_overwrite.sh 均已实现）
-3. **注入 rule-providers**（引用 my-rulesets 的 clash/ 规则集）
-4. **重写 rules**（RULE-SET + GEOIP,CN + MATCH）
-
-> **配置文件命名规范（严格）**：`<机场名称>_<协议>_<代理终端>_MyRules.<ext>`
-> 例：`CreamData_Anytls_Clash_MyRules.yaml`、`Flower_ss_Surge_MyRules.conf`
-
-## 各客户端覆写方法
-
-### FlClash（安卓）
-- 位置：配置 → 覆写 → 脚本模式
-- 支持从 URL 导入脚本：粘贴 `overwrite_script.js` 的 raw URL
-- `main(config)` 入口，JS 直接改 config 对象返回
-- ⚠️ **「外部获取」URL 导入是一次性快照，GitHub 更新不会自动同步到手机**（实测踩坑：改完仓库策略组顺序后手机仍显示旧排序）。仓库每次改 `overwrite_script.js` 后必须提醒用户在 FlClash 里重新「外部获取」导入（被墙则换 jsdelivr：`https://testingcf.jsdelivr.net/gh/xmzzzw/my-rulesets@main/overwrite_script.js`），Clash Verge 有 curl/scp 同步、FlClash 没有
-
-### Clash Verge Rev（Windows）
-- 订阅右键 → 新建脚本 profile
-- `function main(config, profileName)` 入口，返回改后的 config
-- **脚本 profile 不支持从 URL 直拉脚本**（本地文件，脚本环境隔离）→ 手动粘贴或 curl/scp 同步
-- 新版已移除 prepend/append，改「编辑规则/编辑代理组」，但脚本 profile 仍可用
-- **Windows 自动同步**：`scp overwrite_script.js` 到 `%APPDATA%\io.github.clash-verge-rev.clash-verge-rev\profiles\<订阅挂载的脚本>.js`，重启 `clash-verge` 进程生效（详见记忆 [[win-clash-verge-setup]]）
-
-### OpenClash（软路由）
-- 覆写脚本 → `/etc/openclash/custom/openclash_custom_overwrite.sh`
-- Ruby 函数操作 YAML（`ruby_merge_hash`/`ruby_edit`/`ruby_arr_insert_hash`）
-- ⚠️ 见下方「OpenClash 致命坑」
-
-### Surge（Mac/iOS）
-- [Rule] 段直接引用远程规则集：
-  ```
-  RULE-SET,https://raw.githubusercontent.com/xmzzzw/my-rulesets/main/<规则集>.list,<策略>,update-interval=86400
-  ```
-- [Proxy] 段用 `#!include <订阅URL>` 保留订阅刷新
-
-### ClashX / ClashX Pro（Mac）
-- 订阅配置（clash 格式）+ 远程 rule-providers
-- 或参考 FlClash 思路，但 ClashX 无脚本覆写 → 用完整配置
-
-### Shadowrocket（iOS）
-- 配置片段：`[Rule]` 段引用远程 RULE-SET
-- URL 规则：`RULE-SET,<url>,<策略>`
-
-### Loon（iOS）
-- 配置文件引用：`RULE-SET,<url>,<策略>`
-- 插件可脚本覆写
-
-### sing-box
-- 配置 JSON 的 `route.rules` + `rule_set` 引用远程
-- 或用转换工具生成完整配置
-
-## OpenClash 致命坑（重点）
-
-### 坑 1：Ruby 覆写片段必须单行！
-
-OpenClash 的 init.d（`/etc/init.d/openclash`）**用 grep 按「行」提取覆写脚本生成的 Ruby 片段**：
-```bash
-ruby_code=$(grep "yaml_file_path='$yaml_file'" /tmp/yaml_openclash_ruby_parse | sed "s/^threads << Thread.new do //;s/ end$//")
+```text
+SELF_HOSTED.md
+AGENTS.md
 ```
-**多行参数会被截断只剩第一行** → Ruby 语法错误（`unexpected rescue`）→ 覆写静默失效（日志显示 Complete 但配置没变）。
 
-**症状**：日志有 `Start Running MyRules Custom Overwrite Scripts...` + `Complete`，但运行配置结构没变化（还是机场原始分组）。
+覆写实现：
 
-**解决**：所有 `ruby_*` 函数参数**必须单行**。脚本里用 heredoc + `tr -d '\n'` 压缩：
+```text
+overwrite_script.js
+openclash_overwrite.sh
+```
+
+这两个文件必须与 `tools/convert.py` 行为一致。
+
+## Self-hosted V2
+
+节点名：
+
+```text
+<Provider> | <Machine-ID> | <Protocol>
+```
+
+例：
+
+```text
+DMIT | LAX-01 | Snell
+DMIT | LAX-01 | HY2
+DMIT | LAX-02 | Snell
+DMIT | LAX-02 | HY2
+Lisa | LAX-01 | Snell
+Lisa | LAX-01 | HY2
+```
+
+不要再使用旧的：
+
+```text
+🛠 DMIT自建
+🛠 DMIT自建-自动
+```
+
+作为硬编码数据模型。
+
+新前端结构：
+
+```text
+🏠 自建节点            Selector
+🏠 自建节点-自动       URLTest
+
+🖥 DMIT · LAX-01      Selector
+🖥 DMIT · LAX-01-自动 URLTest
+🖥 DMIT · LAX-02      Selector
+🖥 DMIT · LAX-02-自动 URLTest
+🖥 Lisa · LAX-01      Selector
+🖥 Lisa · LAX-01-自动 URLTest
+```
+
+Provider 不单独成为一层策略组。
+
+## 自动组硬规则
+
+顶层自动：
+
+```text
+🏠 自建节点-自动
+→ 所有真实 self-hosted proxy
+```
+
+机器自动：
+
+```text
+🖥 Provider · Machine-自动
+→ 该机器真实 proxy
+```
+
+禁止：
+
+```text
+url-test → url-test
+```
+
+这是跨客户端兼容的重要约束。
+
+## overwrite_script.js
+
+入口：
+
+```javascript
+function main(config, profileName) { ... }
+```
+
+流程：
+
+1. 保留 `config.proxies`
+2. 过滤伪节点
+3. 用 Self-hosted 命名合同识别自建节点
+4. self-hosted 从国家识别中剔除
+5. 构建国家组
+6. 构建应用组
+7. Final 后插入 Self-hosted V2 组
+8. 再插入国家组
+9. 注入 32 rule-providers
+10. 重写 rules
+
+FlClash 与 Clash Verge 都使用同一 JS 逻辑。
+
+## OpenClash
+
+脚本：
+
+```text
+openclash_overwrite.sh
+```
+
+### 关键坑 1：Ruby 参数必须单行
+
+使用：
+
 ```sh
-oneliner() { tr -d '\n' | sed 's/[[:space:]][[:space:]]*/ /g'; }
-GROUPS=$(cat << 'EOF' | oneliner
-[{...},{...}]
-EOF
-)
+oneliner() {
+  tr -d '\n' | sed 's/[[:space:]][[:space:]]*/ /g'
+}
+```
+
+最终传入 `ruby_edit` / `ruby_merge_hash` 的内容不能含换行。
+
+### 关键坑 2：proxy-groups 是 Array
+
+用：
+
+```sh
 ruby_edit "$CONFIG_FILE" "['proxy-groups']" "$GROUPS"
 ```
 
-### 坑 2：rule-provider 下载 EOF 死循环 → 节点全红
+不要用 `ruby_merge_hash` 合并 Array。
 
-mihomo 启动时下载 rule-provider（规则集），若下载流量**命中 `MATCH,✈️Final` 走了代理**，而代理依赖这些规则集 → **EOF 死循环** → 规则集加载失败 → 节点全红。
+### 关键坑 3：provider EOF
 
-**症状**：内核日志大量 `[Provider] provider_N pull error: Get "...": EOF`；节点全红。
+OpenClash rule-provider 使用 jsDelivr，并把以下域名直连规则放在 MATCH 前：
 
-**解决**（两层）：
-1. **规则最前面加 mihomo 内部流量直连**：
-   ```
-   DOMAIN-SUFFIX,jsdelivr.net,🎯Direct
-   DOMAIN-SUFFIX,githubusercontent.com,🎯Direct
-   DOMAIN-SUFFIX,github.com,🎯Direct
-   DOMAIN-SUFFIX,raw.githubusercontent.com,🎯Direct
-   ```
-2. **provider url 用 jsdelivr CDN 而非 raw.githubusercontent.com**：
-   ```
-   https://testingcf.jsdelivr.net/gh/xmzzzw/my-rulesets@main/clash/<规则集>.list
-   ```
-   raw.githubusercontent.com 在软路由直连常被墙/EOF。注意：OpenClash 的 `github_address_mod` 改写发生在覆写脚本**之前**，会被覆盖，所以直接写 jsdelivr 最稳。
-
-### 坑 3：OpenClash 快速启动跳过覆写
-
-- OpenClash 有「Quick Start Mode」：监控文件时间戳，未修改则跳过配置生成
-- **改了覆写脚本必须 `touch` 或删 `/tmp/openclash.change`** 再重启
-- 否则日志出现 `Step 3: Quick Start Mode, Skip Modify The Config File...` → 覆写不生效
-
-### 坑 4：proxy-groups 是 Array，ruby_merge_hash 会报错
-
-`ruby_merge_hash` 用 `merge!`，只适用于 Hash（rule-providers/proxy-providers）。proxy-groups 是 Array，`merge!` 报 `undefined method merge! for Array`。**proxy-groups 必须用 `ruby_edit` 整体赋值**。
-
-### 坑 5：「其他地区」不能用裸 include-all，必须显式枚举
-
-国家分组用 `include-all=>true` + `filter` 只吸本国节点（正确）。但「🌍 其他地区」若也用裸 `include-all=>true` 且**无 filter**，会把订阅**全部**节点吸进来 → 香港/日本/美国等已建独立分组的节点在此重复出现。
-
-**解决**：「其他地区」改用**显式 proxies 列表**枚举未命中任何 ≥2 国家正则的节点（单节点国家天然落这里）。三模块（openclash_overwrite.sh / overwrite_script.js / convert.py）统一此逻辑。注意 mihomo 的 filter 用 RE2，**不支持负向断言 `(?!...)`**，故无法用排除式 filter。
-
-### 坑 6：节点名必须用 ruby YAML.load 提取（OpenClash 关键）
-
-OpenClash 下载订阅经 `yml_change.sh` 处理后，emoji 节点名在 YAML 里被转义为字面 `"\U0001F1F5\U0001F1ED"`（反斜杠+U，非真实 emoji 字节 f0 9f...）。**awk/sed 手工解析只能拿到 `\U0001F1F5` 字面串**，显式 proxies 引用的节点名与 mihomo 加载（YAML 还原成真 emoji）后的真实节点名不一致 → mihomo fatal `not found` → 内核启动失败、节点全红。
-
-**解决**：用 `ruby -ryaml -e 'YAML.load_file(...)'` 提取 `proxies[].name`，Ruby 的 YAML parser 自动正确还原所有 `\U`/引号/反斜杠转义，得到真实 UTF-8 emoji 字节，且天然兼容 block/flow 两种 YAML 写法。OpenClash 软路由自带 `/usr/bin/ruby`。
-
-### 坑 7：国家代码 grep 须加词边界，单节点别误建组
-
-`grep -icE "ID"` 会大小写不敏感命中 `Valid`/`Provider` 里的 `ID` → 单节点国家计数虚高 ≥2 → 误建独立组。**英文国家代码必须加 `[^A-Za-z]` 词边界包夹**（`\b` 对 emoji/中文边界行为不定），emoji/中文用普通包含。
-
-## 广播 IP 判定（机场节点 IP 归属）
-
-**机场「广播 IP」**：所有节点共享同一出口 IP 池，标注国家与实际出口可能不一致。
-
-**实例**（CreamData）：所有「美国/新加坡/日本」节点实际出口都是香港 `AS398704 STACKS INC`。OpenAI/ChatGPT 判定香港为不支持地区 → 403「国家不支持」。
-
-**排查**：
-```bash
-curl -s -x http://<认证>@127.0.0.1:7890 'https://ipinfo.io/json' | grep -E '"country"|"org"'
+```text
+jsdelivr.net
+githubusercontent.com
+github.com
+raw.githubusercontent.com
+creamdata.xyz
 ```
 
-**结论**：广播 IP 机场的「地区限制」问题无法靠覆写解决（配置再对，出口 IP 不变）。需原生 IP 机场或真家宽节点。
+### 关键坑 4：emoji YAML
 
-## 验证方法
+必须让 Ruby `YAML.load_file` 提取节点名。不要用 awk/sed 直接解析 YAML proxy name。
 
-- **mihomo 校验**：`/etc/openclash/clash -t -d /tmp -f <config>.yaml` → `test is successful`
-- **节点延迟**（OpenClash API）：
-  ```bash
-  curl -s -H 'Authorization: Bearer <secret>' -X GET 'http://127.0.0.1:9090/group/<urlencoded>/delay?url=http://www.gstatic.com/generate_204&timeout=3000'
-  ```
-- **流量走向**（内核日志）：
-  ```bash
-  grep -iE 'chatgpt|openai' /tmp/openclash.log
-  ```
+## 策略组顺序
 
-## 关联
+```text
+Proxies
+20 个应用组（AI 第一）
+🎯Direct
+✈️Final
+🏠 自建节点
+🏠 自建节点-自动
+各机器 select/url-test
+国家 select/url-test
+🌍 其他地区（如非空）
+```
 
-- [[my-rulesets-convert]]（订阅转换 skill）
-- 记忆：[[openclash-r2s-deployment]]、[[tower-rules-customization]]
+## 修改时必须同步
+
+```text
+tools/convert.py
+SELF_HOSTED.md
+README.md
+AGENTS.md
+.claude/skills/my-rulesets-convert/SKILL.md
+tests/
+```
+
+## 验证
+
+```bash
+node --check overwrite_script.js
+node tests/test_self_hosted_overwrite.js
+sh -n openclash_overwrite.sh
+sh tests/test_openclash_self_hosted_contract.sh
+python3 -m unittest tests/test_self_hosted_policy.py -v
+```
+
+## 客户端刷新注意
+
+- FlClash 外部获取可能是一次性快照，GitHub 更新后需要重新获取。
+- Clash Verge 脚本 profile 通常是本地文件，需要同步。
+- OpenClash 需要部署到软路由、触发完整覆写、重启后检查实际运行配置。
+- 没有设备权限时，只能报告 GitHub 已完成，不能声称真实设备已更新。
+
+## 安全
+
+公开仓库禁止生产 VPS 凭据、订阅 token、OpenClash secret。只提交逻辑和合成 fixture。
