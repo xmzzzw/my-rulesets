@@ -1,42 +1,91 @@
 #!/usr/bin/env node
 const fs = require('fs');
 const vm = require('vm');
-const path = require('path');
+const assert = require('assert');
 
-const source = fs.readFileSync(path.join(__dirname, '..', 'overwrite_script.js'), 'utf8');
-const sandbox = {};
-vm.createContext(sandbox);
-vm.runInContext(source, sandbox);
+const source = fs.readFileSync('overwrite_script.js', 'utf8') + '\n;globalThis.__myRulesMain = main;';
+const context = { console };
+vm.createContext(context);
+vm.runInContext(source, context);
+const main = context.__myRulesMain;
 
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
+function groupMap(config) {
+  return new Map(config['proxy-groups'].map(group => [group.name, group]));
 }
+
+const selfNodes = [
+  'DMIT | LAX-01 | Snell',
+  'DMIT | LAX-01 | HY2',
+  'DMIT | LAX-02 | Snell',
+  'DMIT | LAX-02 | HY2',
+  'Lisa | LAX-01 | Snell',
+  'Lisa | LAX-01 | HY2',
+];
 
 const config = {
   proxies: [
-    { name: 'DMIT | LAX | Snell', type: 'snell' },
-    { name: 'DMIT | LAX | HY2', type: 'hysteria2' },
-    { name: '🇺🇸 US | 美国 01', type: 'ss' },
-    { name: '🇺🇸 US | 美国 02', type: 'ss' },
+    ...selfNodes.map((name, i) => ({ name, type: i % 2 === 0 ? 'snell' : 'hysteria2' })),
     { name: '🇭🇰 HK | 香港 01', type: 'ss' },
     { name: '🇭🇰 HK | 香港 02', type: 'ss' },
+    { name: '🇺🇸 US | 美国 01', type: 'ss' },
+    { name: '🇺🇸 US | 美国 02', type: 'ss' },
     { name: '🇯🇵 JP | 日本 01', type: 'ss' },
   ],
 };
 
-const result = sandbox.main(config);
-const groups = new Map(result['proxy-groups'].map(g => [g.name, g]));
+const out = main(JSON.parse(JSON.stringify(config)));
+const groups = groupMap(out);
 
-assert(groups.has('🛠 DMIT自建'), 'missing DMIT self-hosted selector');
-assert(groups.has('🛠 DMIT自建-自动'), 'missing DMIT auto group');
-assert(groups.get('Proxies').proxies[0] === '🛠 DMIT自建', 'DMIT should be first in Proxies');
-assert(groups.get('AI').proxies[0] === '🛠 DMIT自建', 'DMIT should be first in AI');
-assert(
-  JSON.stringify(groups.get('🛠 DMIT自建').proxies) ===
-    JSON.stringify(['🛠 DMIT自建-自动', 'DMIT | LAX | Snell', 'DMIT | LAX | HY2']),
-  'unexpected DMIT selector members'
+assert.strictEqual(groups.get('Proxies').proxies[0], '🏠 自建节点');
+assert.strictEqual(groups.get('AI').proxies[0], '🏠 自建节点');
+
+assert.deepStrictEqual(
+  Array.from(groups.get('🏠 自建节点').proxies),
+  ['🏠 自建节点-自动', '🖥 DMIT · LAX-01', '🖥 DMIT · LAX-02', '🖥 Lisa · LAX-01']
 );
-assert(!groups.get('🇺🇸 美国').proxies.includes('DMIT | LAX | Snell'), 'DMIT leaked into US group');
-assert(!groups.get('🌍 其他地区').proxies.includes('DMIT | LAX | Snell'), 'DMIT leaked into Other group');
+assert.deepStrictEqual(Array.from(groups.get('🏠 自建节点-自动').proxies), selfNodes);
 
-console.log('self-hosted overwrite tests passed');
+assert.deepStrictEqual(
+  Array.from(groups.get('🖥 DMIT · LAX-01').proxies),
+  ['🖥 DMIT · LAX-01-自动', 'DMIT | LAX-01 | Snell', 'DMIT | LAX-01 | HY2']
+);
+assert.deepStrictEqual(
+  Array.from(groups.get('🖥 DMIT · LAX-01-自动').proxies),
+  ['DMIT | LAX-01 | Snell', 'DMIT | LAX-01 | HY2']
+);
+
+for (const name of selfNodes) {
+  assert.ok(!groups.get('🇺🇸 美国').proxies.includes(name), `${name} leaked into US group`);
+  assert.ok(!groups.get('🌍 其他地区').proxies.includes(name), `${name} leaked into Other group`);
+}
+
+assert.ok(groups.get('🌍 其他地区').proxies.includes('🇯🇵 JP | 日本 01'));
+
+const visibleOrder = Array.from(out['proxy-groups'], group => group.name);
+const finalIndex = visibleOrder.indexOf('✈️Final');
+assert.deepStrictEqual(
+  visibleOrder.slice(finalIndex + 1, finalIndex + 9),
+  [
+    '🏠 自建节点',
+    '🏠 自建节点-自动',
+    '🖥 DMIT · LAX-01',
+    '🖥 DMIT · LAX-01-自动',
+    '🖥 DMIT · LAX-02',
+    '🖥 DMIT · LAX-02-自动',
+    '🖥 Lisa · LAX-01',
+    '🖥 Lisa · LAX-01-自动',
+  ]
+);
+
+// No self-hosted nodes: old behavior remains, no empty self groups.
+const noSelf = main({
+  proxies: [
+    { name: '🇭🇰 HK | 香港 01', type: 'ss' },
+    { name: '🇭🇰 HK | 香港 02', type: 'ss' },
+  ],
+});
+const noSelfNames = noSelf['proxy-groups'].map(group => group.name);
+assert.ok(!noSelfNames.includes('🏠 自建节点'));
+assert.strictEqual(noSelf['proxy-groups'][0].proxies[0], '🇭🇰 香港');
+
+console.log('test_self_hosted_overwrite.js: PASS');

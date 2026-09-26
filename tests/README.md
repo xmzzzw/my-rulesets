@@ -1,18 +1,27 @@
-# Tests
+# tests
 
-当前自建 VPS 改造提供两个最小回归测试：
+Self-hosted V2 回归测试使用纯合成节点，不包含真实 IP、密码、PSK 或订阅 token。
+
+## 测试
 
 ```bash
-python3 tests/test_self_hosted_policy.py
+node --check overwrite_script.js
 node tests/test_self_hosted_overwrite.js
+
+python3 -m py_compile tools/convert.py
+python3 -m unittest tests/test_self_hosted_policy.py -v
+
+sh -n openclash_overwrite.sh
+sh tests/test_openclash_self_hosted_contract.sh
 ```
 
-它们验证：
+验证内容：
 
-- `DMIT | ...` 自动进入 `🛠 DMIT自建`；
-- `🛠 DMIT自建-自动` 正确包含各协议节点；
-- `Proxies` 与 `AI` 的 DMIT 优先顺序；
-- DMIT 节点不会泄漏进国家分组或 `🌍 其他地区`；
-- 不存在 DMIT 节点时保持原有分组行为。
-
-OpenClash 的 shell 脚本还应至少执行 `sh -n openclash_overwrite.sh`，并在真实 r2s/OpenClash 环境部署前进行配置生成和 mihomo 加载验证。
+- 通用 `<Provider> | <Machine-ID> | <Protocol>` 识别
+- 多 Provider / 多机器
+- `🏠 自建节点` 顶层组
+- `🖥 Provider · Machine` 机器组
+- 顶层/机器 `url-test` 均直接引用真实节点
+- `AI` 与 `Proxies` 的 self-hosted 优先项
+- self-hosted 不泄漏进国家组或 `🌍 其他地区`
+- 无 self-hosted 时保持机场-only 行为

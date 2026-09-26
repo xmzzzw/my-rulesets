@@ -1,99 +1,215 @@
-# Self-hosted VPS / 自建 VPS 节点规范
+# Self-hosted V2 / 自建 VPS 节点规范
 
-本仓库支持把自建 VPS 当作与“国家分组”同级的一级策略组，而不是混入机场的国家节点池。
+本文件是 `xmzzzw/my-rulesets` 的 **Self-hosted V2 唯一规范**。目标不是把内部数据模型完整暴露给客户端，而是把前端可见层级压平到最多两层策略组，保证 Surge / Mihomo 系客户端的可用性和可读性。
 
-## 当前约定：DMIT
+## 1. 前端必须看到的结构
 
-自建 DMIT 节点必须采用以下命名格式：
-
-```text
-DMIT | <Region> | <Protocol>
-```
-
-推荐示例：
+存在多个自建机器时，策略组顺序固定为：
 
 ```text
-DMIT | LAX | Snell
-DMIT | LAX | HY2
+AI                    Selector
+Proxies               Selector
+🎯Direct              Selector
+✈️Final               Selector
+
+🏠 自建节点            Selector
+🏠 自建节点-自动       URLTest
+
+🖥 DMIT · LAX-01      Selector
+🖥 DMIT · LAX-01-自动 URLTest
+
+🖥 DMIT · LAX-02      Selector
+🖥 DMIT · LAX-02-自动 URLTest
+
+🖥 Lisa · LAX-01      Selector
+🖥 Lisa · LAX-01-自动 URLTest
+
+🇭🇰 香港               Selector
+🇭🇰 香港-自动          URLTest
+...
 ```
 
-公开仓库只依赖节点名称识别自建节点，不保存 VPS IP、端口密码、PSK、TLS 密钥或任何其他凭据。
+这里**不生成 Provider 独立策略层**。`Provider + Machine-ID` 被压平为一个机器策略组，例如 `🖥 DMIT · LAX-01`。
 
-## 客户端中的策略结构
+## 2. 节点命名合同
 
-当配置里至少存在一个以 `DMIT |` 开头的节点时，自动生成：
+真实自建代理节点必须命名为：
+
+```text
+<Provider> | <Machine-ID> | <Protocol>
+```
+
+示例：
+
+```text
+DMIT | LAX-01 | Snell
+DMIT | LAX-01 | HY2
+DMIT | LAX-02 | Snell
+DMIT | LAX-02 | HY2
+Lisa | LAX-01 | Snell
+Lisa | LAX-01 | HY2
+```
+
+约束：
+
+- `Provider`：ASCII 字母/数字/`.`/`_`/`-`，例如 `DMIT`、`Lisa`、`BWH`。
+- `Machine-ID`：ASCII 字母/数字/`.`/`_`/`-`，例如 `LAX-01`、`SJC-02`。
+- `Protocol`：支持标签之一：`SS / SSR / Trojan / AnyTLS / VMess / VLESS / Hysteria2 / Hysteria / HY2 / TUIC / WireGuard / Snell / HTTP / SOCKS5`，大小写不敏感。
+- 节点名必须正好由 3 个 `|` 分段组成。
+- 机场节点不满足这个合同，因此继续进入国家识别。
+
+这个合同的目的，是避免把普通机场的 `US | 美国 01`、`HK | 香港 01` 误识别成自建节点。
+
+## 3. 分组规则
+
+### 3.1 顶层自建组
+
+```text
+🏠 自建节点
+├─ 🏠 自建节点-自动
+├─ 🖥 DMIT · LAX-01
+├─ 🖥 DMIT · LAX-02
+└─ 🖥 Lisa · LAX-01
+```
+
+`🏠 自建节点` 是 `select`。
+
+### 3.2 顶层自动组
+
+```text
+🏠 自建节点-自动
+├─ DMIT | LAX-01 | Snell
+├─ DMIT | LAX-01 | HY2
+├─ DMIT | LAX-02 | Snell
+├─ DMIT | LAX-02 | HY2
+├─ Lisa | LAX-01 | Snell
+└─ Lisa | LAX-01 | HY2
+```
+
+`🏠 自建节点-自动` 是 `url-test`，**直接引用所有真实协议节点**。
+
+不要写成：
+
+```text
+🏠 自建节点-自动
+├─ 🖥 DMIT · LAX-01-自动
+└─ 🖥 Lisa · LAX-01-自动
+```
+
+也就是说：**自动组不嵌套自动组**。这样对 Surge / Mihomo / 其他客户端更稳定。
+
+### 3.3 单台机器组
+
+```text
+🖥 DMIT · LAX-01
+├─ 🖥 DMIT · LAX-01-自动
+├─ DMIT | LAX-01 | Snell
+└─ DMIT | LAX-01 | HY2
+```
+
+机器组是 `select`。
+
+机器自动组：
+
+```text
+🖥 DMIT · LAX-01-自动
+├─ DMIT | LAX-01 | Snell
+└─ DMIT | LAX-01 | HY2
+```
+
+是 `url-test`，也直接引用真实协议节点。
+
+## 4. 应用策略
+
+存在自建节点时：
 
 ```text
 Proxies
-├─ 🛠 DMIT自建
-├─ 🇭🇰 香港
-├─ 🇺🇸 美国
-├─ 🇯🇵 日本
-└─ ...
-
-🛠 DMIT自建
-├─ 🛠 DMIT自建-自动
-├─ DMIT | LAX | Snell
-└─ DMIT | LAX | HY2
-
-🛠 DMIT自建-自动
-├─ DMIT | LAX | Snell
-└─ DMIT | LAX | HY2
+├─ 🏠 自建节点
+├─ 国家组...
 ```
 
-`🛠 DMIT自建-自动` 当前使用 `url-test`，参数与现有国家自动组保持一致：
-
-- URL: `http://www.gstatic.com/generate_204`
-- interval: `300`
-- tolerance: `50`
-
-## AI 策略
-
-如果 DMIT 自建节点存在，`AI` 策略组把 `🛠 DMIT自建` 放在第一位：
+`AI` 优先把自建节点放第一项：
 
 ```text
 AI
-├─ 🛠 DMIT自建
+├─ 🏠 自建节点
 ├─ Proxies
 ├─ 🎯Direct
-├─ 🇺🇸 美国
-├─ 🇭🇰 香港
-└─ ...
+├─ 国家组...
 ```
 
-这样海外 AI 服务可以默认走固定 VPS 出口，同时仍可手动切回机场国家组。
-
-其他应用组保持原来的操作习惯：
+其他应用策略：
 
 ```text
-Google / Telegram / Crypto / Netflix / ...
+Google / Telegram / Crypto / ...
 ├─ Proxies
 ├─ 🎯Direct
-├─ 🛠 DMIT自建
-├─ 国家分组...
+├─ 🏠 自建节点
+├─ 国家组...
 ```
 
-## 归类隔离规则
+`✈️Final` 同样显式提供 `🏠 自建节点`。
 
-`DMIT | ...` 节点属于 `self-hosted`，不是国家节点：
+## 5. 国家分组隔离
 
-1. 不参与国家节点数量统计；
-2. 不进入 `🇺🇸 美国` 等国家分组；
-3. 不进入 `🌍 其他地区`；
-4. 只出现在 `🛠 DMIT自建` / `🛠 DMIT自建-自动` 以及上层可选择策略中。
+一旦节点符合 Self-hosted V2 命名合同：
 
-即使 VPS 实际位于洛杉矶，也不会因为地区信息被重复归入美国机场节点池。
+- 不进入 `🇺🇸 美国`、`🇭🇰 香港` 等国家统计；
+- 不进入 `🌍 其他地区`；
+- 只进入对应机器组与 `🏠 自建节点` 体系。
 
-## 无 DMIT 节点时
+即使 `Machine-ID=LAX-01`，也不会因为地理位置在美国而重复进入 `🇺🇸 美国`。
 
-如果配置中不存在 `DMIT | ...` 节点，则不会创建任何 DMIT 分组，原有国家分组和应用策略保持原样，保证向后兼容。
+## 6. 无自建节点时
 
-## 适用实现
+如果配置中没有任何符合合同的自建节点：
 
-当前规范已同步到：
+- 不生成 `🏠 自建节点`；
+- 不生成机器组；
+- `Proxies / AI / Final / 国家分组` 保持原来的机场-only 行为。
 
-- `overwrite_script.js`：FlClash / Clash Verge Rev / Mihomo
-- `openclash_overwrite.sh`：OpenClash
-- `tools/convert.py`：Surge / Clash 配置生成
+## 7. 当前实现覆盖
 
-后续增加其他 VPS 厂商时，建议沿用同样的 `<Provider> | <Region> | <Protocol>` 命名模型，并为其建立独立 `self-hosted` 一级组，而不是直接塞进国家组。
+本规范必须同步到以下所有实现：
+
+- `overwrite_script.js`：FlClash / Clash Verge Rev / Mihomo。
+- `openclash_overwrite.sh`：OpenClash。
+- `tools/convert.py`：Surge / Clash 配置生成。
+- `.claude/skills/my-rulesets-convert/SKILL.md`。
+- `.claude/skills/my-rulesets-overwrite/SKILL.md`。
+- `AGENTS.md`。
+- `README.md / USAGE.md / OVERWRITE.md / tools/README.md`。
+- `tests/` 回归测试。
+
+任何一端修改 Self-hosted 规则，都必须同时修改另外两端和 skills，并通过三端一致性测试。
+
+## 8. 安全
+
+仓库是公开的。禁止提交：
+
+- VPS IP（如果用户希望保密）；
+- 端口/用户名/密码；
+- Snell PSK；
+- Hysteria2 密码；
+- ShadowTLS 密钥；
+- WireGuard 私钥；
+- 机场订阅 token；
+- 任何完整真实生产节点配置。
+
+公开仓库只保存**命名合同、分组逻辑和无秘密的合成测试 fixture**。
+
+## 9. AI 固定出口建议
+
+`🏠 自建节点-自动` 可以跨机器切换，因此公网出口 IP 可能变化。
+
+对于 ChatGPT / Claude / Codex 等希望稳定出口身份的业务，推荐手动选择：
+
+```text
+AI
+→ 🏠 自建节点
+→ 🖥 DMIT · LAX-01
+→ 🖥 DMIT · LAX-01-自动
+```
+
+这样 Snell / HY2 可以自动切换，但仍然使用同一台 VPS 的公网 IP。
